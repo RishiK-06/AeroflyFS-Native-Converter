@@ -1,0 +1,170 @@
+# Installation Guide — Aerofly FS Converter
+
+Should work normally on **Windows**, **macOS** and **Linux**.
+
+The app window (screenshots generated from the real application):
+
+![Texture decode mode](docs/screenshots/01_textures_decode.png)
+![Texture encode mode](docs/screenshots/02_textures_encode.png)
+![Audio: TSB to WAV](docs/screenshots/03_audio_tsb.png)
+![Audio: MP3 to WAV](docs/screenshots/04_audio_mp3.png)
+![Scenery: TOC to JSON](docs/screenshots/05_scenery_toc.png)
+![After a conversion](docs/screenshots/06_after_convert.png)
+
+---
+
+## What you need
+
+1. **Python 3.9 or newer** from [python.org](https://www.python.org/downloads/)
+   (download the latest 3.12/3.13 installer).
+2. An internet connection for one `pip install` command.
+
+The app itself does **not** need internet, ffmpeg, or any system codecs.
+MP3 / FLAC / OGG decoding uses the `miniaudio` package (decoders included in the wheel).
+
+---
+
+## Windows
+
+### Step 1 — Install Python
+
+1. Download the **Windows installer (64-bit)** from python.org.
+2. Run it and **tick "Add python.exe to PATH"** at the bottom of the first page.
+3. Click *Install Now*.
+4. Open **PowerShell** (Start menu → type `powershell`).
+
+### Step 2 — Get the app
+
+Copy the `aerofly_converter` folder anywhere you like, e.g.:
+
+```powershell
+cd C:\Users\<you>\MyPython\aerofly_converter
+```
+
+(Replace `<you>` with your Windows user name.)
+
+### Step 3 — Install dependencies
+
+```powershell
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+You should see `Successfully installed PySide6-Essentials ...` (plus Pillow, wasmtime, texture2ddecoder, miniaudio).
+
+### Step 4 — Run the app
+
+```powershell
+python ttx_gui.py
+```
+
+The window from the screenshots above opens.
+
+### Optional — a one-click launcher
+
+Save this as `run.bat` next to `ttx_gui.py`:
+
+```bat
+@echo off
+cd /d "%~dp0"
+python ttx_gui.py
+pause
+```
+
+Double-click `run.bat` to start the app.
+
+---
+
+## macOS
+
+### Step 1 — Install Python
+
+- Download the **macOS universal2 installer** from python.org, **or** install via
+  Homebrew:
+
+```bash
+brew install python@3.13
+```
+
+### Step 2 — Get the app
+
+Copy the `aerofly_converter` folder anywhere, e.g.:
+
+```bash
+cd ~/MyPython/aerofly_converter
+```
+
+### Step 3 — Install dependencies
+
+macOS ships a read-only system Python, so create a virtual environment first:
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+Your terminal prompt now shows `(venv)`.
+
+### Step 4 — Run the app
+
+```bash
+python ttx_gui.py
+```
+
+To start the app later, again run:
+
+```bash
+cd ~/MyPython/aerofly_converter
+source venv/bin/activate
+python ttx_gui.py
+```
+
+If you use **zsh**, you can add a quick alias to `~/.zshrc`:
+
+```bash
+alias aerofly-converter='cd ~/MyPython/aerofly_converter && source venv/bin/activate && python ttx_gui.py'
+```
+---
+
+## Using the app
+
+1. Pick a **conversion type** from the drop-down at the top. It is grouped into
+   **Textures**, **Audio** and **Scenery**.
+2. **Drag & drop** files onto the big dashed area (or click *Browse*).
+3. Click **Convert**. Files are written next to the originals; a progress bar and a live log show what is happening. When it finishes, **Open output folder** appears so you can jump straight to the results.
+
+| Conversion type | Input | Output |
+|---|---|---|
+| TTX → PNG | `.ttx` texture | `.png` |
+| PNG → TTX | `.png`/`.jpg`/`.bmp`/`.tga` | `.ttx` (RGBA, R8, DXT1, DXT5) |
+| TSB → WAV | `.tsb` sound | `.wav` (16-bit PCM) |
+| WAV → TSB | `.wav` | `.tsb` |
+| MP3 → WAV | `.mp3` | `.wav` (16-bit PCM) |
+| FLAC → WAV | `.flac` | `.wav` (16-bit PCM) |
+| OGG → WAV | `.ogg` | `.wav` (16-bit PCM) |
+| TOC → JSON/TXT | `.toc` scenery table | `.json` + `.txt` |
+
+The same conversions are available from the command line (no GUI):
+
+```bash
+python ttx_converter.py <file.ttx> --flip          # texture -> PNG
+python ttx_converter.py <file.png> -t --format type_rgba   # PNG -> TTX
+python ttx_converter.py <file.tsb>                 # sound -> WAV
+python ttx_converter.py <file.wav>                 # WAV -> TSB
+python ttx_converter.py <file.mp3>                 # MP3 -> WAV
+python ttx_converter.py <file.toc>                 # table -> JSON + TXT
+```
+
+---
+
+## Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| `'PySide6' is not defined` / `ModuleNotFoundError: PySide6` | Re-run `pip install -r requirements.txt` inside the activated venv |
+| `miniaudio is required for MP3/FLAC/OGG` | Run `pip install miniaudio` |
+| `buffer is too short` / odd PNG output | Textures are GPU-compressed (DXT/ETC/ASTC are lossy); this is expected |
+| Long-path errors installing PySide6 on Windows (Microsoft Store Python) | Enable Windows long paths: run PowerShell **as Administrator** and execute `reg add "HKLM\SYSTEM\CurrentControlSet\Control\FileSystem" /v LongPathsEnabled /t REG_DWORD /d 1 /f`, or install the python.org build instead |
+| On macOS "unidentified developer" | Right-click the terminal/app and choose *Open*, or run from a terminal as shown above |

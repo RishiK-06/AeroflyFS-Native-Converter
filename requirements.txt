@@ -1,0 +1,5 @@
+Pillow>=10.0.0
+wasmtime>=22.0.0
+texture2ddecoder>=1.0.6
+PySide6>=6.8.0
+miniaudio>=1.60
