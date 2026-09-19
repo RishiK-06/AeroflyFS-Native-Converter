@@ -9,6 +9,17 @@ MAGIC_PLAIN = bytes([0xA6, 0x97, 0xE9, 0xAC, 0xF9, 0xFC, 0xC1, 0x7C])
 _lzham_cache = {}
 
 
+def _is_po2(n: int) -> bool:
+    return n > 0 and (n & (n - 1)) == 0
+
+
+def _po2_warning(w: int, h: int) -> str:
+    return (
+        f"WARNING: {w}x{h} is not power-of-two - Aerofly textures are expected "
+        "to be power-of-two (e.g. 1024x1024, 1024x512)"
+    )
+
+
 class TtxError(Exception):
     """Raised on invalid / unsupported TTX input."""
 
@@ -398,6 +409,7 @@ def decode(data: bytes, flip: bool = False):
         "format": info["format"],
         "mips": info["mips"],
         "compressed": compressed,
+        "po2": _is_po2(info["width"]) and _is_po2(info["height"]),
         "rgba": rgba,
     }
 
@@ -417,6 +429,8 @@ def ttx_to_png(
         status("Decoding ...")
     result = decode(raw, flip=flip)
     if status:
+        if not result["po2"]:
+            status(_po2_warning(result["width"], result["height"]))
         status("Writing PNG ...")
     _save_png(out_path, result["rgba"], result["width"], result["height"])
     if status:
@@ -472,6 +486,8 @@ def encode_png(
     w, h = img.size
     if status:
         status(f"Encoding {fmt} ...")
+        if not (_is_po2(w) and _is_po2(h)):
+            status(_po2_warning(w, h))
     if fmt == "type_rgba":
         payload = img.tobytes()
     elif fmt == "type_r":
@@ -489,7 +505,8 @@ def encode_png(
         f.write(data)
     if status:
         status("Done.")
-    return {"width": w, "height": h, "format": fmt, "mips": 1, "compressed": False}
+    return {"width": w, "height": h, "format": fmt, "mips": 1,
+            "compressed": False, "po2": _is_po2(w) and _is_po2(h)}
 
 
 def _u64_bytes(v: int) -> bytes:
@@ -728,7 +745,8 @@ def _auto_cli(argv=None):
         p.add_argument("-f", "--format", default="type_rgba",
                        choices=sorted(ENCODABLE_FORMATS),
                        help="Output texture format when encoding")
-        p.add_argument("--flip", action="store_true", help="Flip vertically")
+        p.add_argument("--flip", action="store_true",
+                       help="Flip vertically (for liveries)")
         p.add_argument("--info", action="store_true", help="Print info only")
         args = p.parse_args(argv)
     except ImportError:
@@ -815,6 +833,8 @@ def _auto_cli(argv=None):
             with open(f, "rb") as fh:
                 raw = fh.read()
             res = decode(raw, flip=args.flip)
+            if not res["po2"]:
+                print(f"    {_po2_warning(res['width'], res['height'])}")
             if args.info:
                 print(
                     f"    {res['format']} {res['width']}x{res['height']} "

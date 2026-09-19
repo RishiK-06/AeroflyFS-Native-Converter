@@ -444,7 +444,7 @@ class MainWindow(QMainWindow):
         pulse_row.addWidget(self._fmt_lbl)
         pulse_row.addWidget(self._fmt_combo)
 
-        self._flip_cb = QCheckBox("Flip vertically", central)
+        self._flip_cb = QCheckBox("Flip vertically (for liveries)", central)
         pulse_row.addWidget(self._flip_cb)
 
         pulse_row.addStretch(1)
