@@ -77,20 +77,7 @@ wasmtime, texture2ddecoder, miniaudio).
 python ttx_gui.py
 ```
 
-The window from the screenshots above opens.
 
-### Optional — a one-click launcher
-
-Save this as `run.bat` next to `ttx_gui.py`:
-
-```bat
-@echo off
-cd /d "%~dp0"
-python ttx_gui.py
-pause
-```
-
-Double-click `run.bat` to start the app.
 
 ---
 
@@ -132,6 +119,26 @@ If you use **zsh**, you can add a quick alias to `~/.zshrc`:
 ```bash
 alias aerofly-converter='cd ~/AeroflyFS-Native-Converter-main && source ./venv/bin/activate && python ttx_gui.py'
 ```
+
+### Step 9 — Create a Desktop Launcher
+
+**One-time shortcut creation** — open Terminal and paste this entire block of
+commands, then press Enter:
+
+```bash
+cat > ~/Desktop/Aerofly\ Converter.command <<'EOF'
+#!/bin/bash
+cd ~/Downloads/AeroflyFS-Native-Converter-main
+source venv/bin/activate
+python ttx_gui.py
+EOF
+chmod +x ~/Desktop/Aerofly\ Converter.command
+```
+
+**How to verify:** check your Mac Desktop for a new file named
+`Aerofly Converter.command`.
+
+
 
 ---
 
