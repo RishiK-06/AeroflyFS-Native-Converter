@@ -729,16 +729,17 @@ def _auto_cli(argv=None):
       .tsb        -> .wav        python ttx_converter.py in.tsb [-o out.wav]
       .wav        -> .tsb        python ttx_converter.py in.wav [-o out.tsb]
       .mp3/.flac/.ogg -> .wav    python ttx_converter.py in.mp3 [-o out.wav]
-      .toc        -> .json/.txt  python ttx_converter.py in.toc [-o out.json]"""
+      .toc/.tsc/.wad/.tmb/.tsl -> .txt  python ttx_converter.py in.toc [-o out.txt]"""
     argv = list(sys.argv[1:] if argv is None else argv)
     try:
         import argparse
 
         p = argparse.ArgumentParser(
-            description="Convert Aerofly FS .ttx/.tsb/.toc container files and audio"
+            description="Convert Aerofly FS .ttx/.tsb/compressed container files and audio"
         )
         p.add_argument("paths", nargs="+",
-                       help=".ttx/.png/.tsb/.toc/.wav/.mp3/.flac/.ogg file(s) or folder(s)")
+                       help=".ttx/.png/.tsb/.toc/.tsc/.wad/.tmb/.tsl/.wav/.mp3/.flac/.ogg "
+                            "file(s) or folder(s)")
         p.add_argument("-o", "--output", help="Output file name (single file only)")
         p.add_argument("-t", "--to-ttx", action="store_true",
                        help="Encode PNG/JPG -> .ttx instead of decoding")
@@ -756,7 +757,7 @@ def _auto_cli(argv=None):
     from pathlib import Path
 
     DEFAULT_PATS = (
-        "*.ttx", "*.tsb", "*.toc",
+        "*.ttx", "*.tsb", "*.toc", "*.tsc", "*.wad", "*.tmb", "*.tsl",
         "*.wav", "*.mp3", "*.flac", "*.ogg",
     )
     EXT_PATTERN = ("*.png", "*.jpg", "*.jpeg", "*.bmp", "*.tga")
@@ -814,12 +815,12 @@ def _auto_cli(argv=None):
                     print(f"    {info['format']} {info['sample_rate']:.0f} Hz "
                           f"{info['channels']}ch {info['bits']}-bit")
                 continue
-            if low.endswith(".toc"):
-                from toc_decoder import toc_to_json
+            if low.endswith((".toc", ".tsc", ".wad", ".tmb", ".tsl")):
+                from toc_decoder import toc_to_txt
 
-                out = args.output or (os.path.splitext(f)[0] + ".json")
-                doc = toc_to_json(f, out,
-                                  status=lambda msg: print(f"    {msg}"))
+                out = args.output or (os.path.splitext(f)[0] + ".txt")
+                doc = toc_to_txt(f, out,
+                                 status=lambda msg: print(f"    {msg}"))
                 print(f"    {doc['variant']} placement_count={doc['placement_count']}")
                 continue
             if (args.to_ttx or not low.endswith(".ttx")):

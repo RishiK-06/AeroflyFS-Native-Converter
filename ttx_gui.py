@@ -69,7 +69,7 @@ MODES = (
     (MODE_MP3, "MP3 \u2192 WAV"),
     (MODE_FLAC, "FLAC \u2192 WAV"),
     (MODE_OGG, "OGG \u2192 WAV"),
-    (MODE_TOC, "TOC \u2192 JSON/TXT"),
+    (MODE_TOC, "Compressed \u2192 TXT (generic)"),
 )
 
 CATEGORIES = (
@@ -87,7 +87,7 @@ MODE_EXT = {
     MODE_MP3: ".wav",
     MODE_FLAC: ".wav",
     MODE_OGG: ".wav",
-    MODE_TOC: ".json",
+    MODE_TOC: ".txt",
 }
 MODE_INPUT_EXTS = {
     MODE_DECODE: (".ttx",),
@@ -97,7 +97,7 @@ MODE_INPUT_EXTS = {
     MODE_MP3: (".mp3",),
     MODE_FLAC: (".flac",),
     MODE_OGG: (".ogg",),
-    MODE_TOC: (".toc",),
+    MODE_TOC: (".toc", ".tsc", ".wad", ".tmb", ".tsl"),
 }
 MODE_HINT = {
     MODE_DECODE: "Drag & drop .ttx files here\nor use the Browse button below",
@@ -107,7 +107,7 @@ MODE_HINT = {
     MODE_MP3: "Drag & drop .mp3 files here\nor use the Browse button below",
     MODE_FLAC: "Drag & drop .flac files here\nor use the Browse button below",
     MODE_OGG: "Drag & drop .ogg files here\nor use the Browse button below",
-    MODE_TOC: "Drag & drop .toc scenery tables here\nor use the Browse button below",
+    MODE_TOC: "Drag & drop .toc .tsc .wad .tmb .tsl files here\nor use the Browse button below",
 }
 MODE_VER = {
     MODE_DECODE: "Decodes DXT  ETC2  ASTC  R8  RGBA textures \u2192 PNG",
@@ -117,7 +117,7 @@ MODE_VER = {
     MODE_MP3: "Decodes MP3 \u2192 16-bit WAV (lossless PCM)",
     MODE_FLAC: "Decodes FLAC \u2192 16-bit WAV",
     MODE_OGG: "Decodes OGG Vorbis \u2192 16-bit WAV",
-    MODE_TOC: "Decodes cultivation / xref scenery tables \u2192 JSON + text",
+    MODE_TOC: "Decodes compressed TM containers (.toc/.tsc/.wad/.tmb/.tsl) \u2192 generic text",
 }
 MODE_NOUN = {
     MODE_DECODE: "files",
@@ -127,7 +127,7 @@ MODE_NOUN = {
     MODE_MP3: "MP3 files",
     MODE_FLAC: "FLAC files",
     MODE_OGG: "OGG files",
-    MODE_TOC: "tables",
+    MODE_TOC: "files",
 }
 MODE_FILETYPES = {
     MODE_DECODE: [("TTX textures", "*.ttx")],
@@ -137,7 +137,7 @@ MODE_FILETYPES = {
     MODE_MP3: [("MP3 audio", "*.mp3")],
     MODE_FLAC: [("FLAC audio", "*.flac"), ("All audio", "*.flac *.wav *.ogg *.mp3")],
     MODE_OGG: [("OGG audio", "*.ogg")],
-    MODE_TOC: [("TOC tables", "*.toc")],
+    MODE_TOC: [("Compressed containers", "*.toc *.tsc *.wad *.tmb *.tsl")],
 }
 
 DROP_BG = "#242424"
@@ -286,7 +286,7 @@ class _ConvertWorker(QObject):
                 elif self._mode == MODE_TOC:
                     import toc_decoder
 
-                    doc = toc_decoder.toc_to_json(path, out, status=_st)
+                    doc = toc_decoder.toc_to_txt(path, out, status=_st)
                     info = (f"{doc['variant']}  "
                             f"placements={doc['placement_count']}")
                 else:
