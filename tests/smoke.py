@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from PIL import Image
 import ttx_converter as ttx
+import toc_decoder
 import tsb_decoder
 
 
@@ -41,6 +42,25 @@ def main() -> int:
                 assert (res["width"], res["height"]) == size
                 assert res["po2"]
 
+        # Generic TM container (fake): root object > uint32 leaf.
+        tm_header = (
+            bytes.fromhex("61fae71e97f133d7")  # tmworld_airport_detailed
+            + bytes(8)                          # name id (unknown -> name_00000000)
+            + struct.pack("<Q", 68)             # obj size
+            + struct.pack("<Q", 32)             # header size (has children)
+            + bytes.fromhex("9e8caf8498703ec2")  # uint32
+            + bytes(8)                           # name id
+            + struct.pack("<Q", 36)             # obj size
+            + struct.pack("<Q", 4)              # header size (leaf)
+            + struct.pack("<I", 144)            # value
+        )
+        assert len(tm_header) == 68
+        doc = toc_decoder.parse_toc(tm_header)
+        assert doc["kind"] == "tm"
+        assert doc["variant"] == "generic_text"
+        assert "<[uint32][name_00000000][144]>" in doc["text"]
+        assert "<[file][][]" in doc["text"]  # wrapped dump root
+
         wav = os.path.join(tmp, "t.wav")
         _make_wav(wav)
         tsb = os.path.join(tmp, "t.tsb")
@@ -52,7 +72,7 @@ def main() -> int:
         assert ri["channels"] == 1
         assert int(ri["sample_rate"]) == 22050
 
-    print("SMOKE OK: ttx square+rect all formats, tsb<->wav round-trip")
+    print("SMOKE OK: ttx square+rect all formats, tsb<->wav round-trip, tm generic dump")
     return 0
 
 
