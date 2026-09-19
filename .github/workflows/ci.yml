@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }} (py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Qt system deps (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1 libegl1 libxkbcommon0 \
+            libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 \
+            libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 \
+            libxcb-xinerama0 libxcb-xfixes0 xvfb
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Compile check
+        run: python -m compileall -q ttx_converter.py ttx_gui.py tsb_decoder.py toc_decoder.py audio_utils.py assets tests
+
+      - name: Functional smoke test
+        run: python tests/smoke.py
+
+      - name: GUI smoke test (Linux, virtual display)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python tests/gui_smoke.py
+
+      - name: GUI smoke test (macOS / Windows, offscreen)
+        if: runner.os != 'Linux'
+        env:
+          PYTHONUTF8: "1"
+          QT_QPA_PLATFORM: offscreen
+        run: python tests/gui_smoke.py

@@ -1,0 +1,105 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.artifact }} binaries
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: windows
+            sep: ";"
+          - os: macos-latest
+            artifact: macos
+            sep: ":"
+          - os: ubuntu-latest
+            artifact: linux
+            sep: ":"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps + PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install "pyinstaller>=6.6"
+
+      - name: Build GUI binary
+        shell: bash
+        run: |
+          ICON=()
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            ICON=(--icon "assets/app_icon.ico")
+          fi
+          python -m PyInstaller --noconfirm --onefile --windowed \
+            "${ICON[@]}" \
+            --name "AeroflyFS-Converter" \
+            --add-data "tmcompress.wasm${{ matrix.sep }}." \
+            --add-data "assets${{ matrix.sep }}assets" \
+            ttx_gui.py
+
+      - name: Build CLI binary
+        shell: bash
+        run: |
+          python -m PyInstaller --noconfirm --onefile \
+            --name "aerofly-converter" \
+            --add-data "tmcompress.wasm${{ matrix.sep }}." \
+            --add-data "assets${{ matrix.sep }}assets" \
+            ttx_converter.py
+
+      - name: Smoke-test the CLI binary
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then BIN=dist/aerofly-converter.exe; else BIN=dist/aerofly-converter; fi
+          "$BIN" --help >/dev/null && echo "CLI binary OK"
+
+      - name: Package zips
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os, shutil
+          os.makedirs("artifacts", exist_ok=True)
+          stem = "AeroflyFS-Converter-${{ matrix.artifact }}"
+          shutil.make_archive(f"artifacts/{stem}", "zip", root_dir="dist")
+          print("wrote artifacts/" + stem + ".zip")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aerofly-converter-${{ matrix.artifact }}
+          path: artifacts/*.zip
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release (draft)
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -la release-assets
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*
+          draft: true
+          generate_release_notes: true
