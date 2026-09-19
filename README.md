@@ -18,7 +18,8 @@ Windows, macOS and Linux, Made with inspiration from AuroraBorealis's web conver
 
 - **Drag & drop** or browse for one or more files (mode picks the accepted type)
 - Converts files side-by-side (same folder, matching extension)
-- **Flip vertically** option (liveries are stored flipped)
+- **Flip vertically (for liveries)** option; **power-of-two warnings**
+  (Aerofly textures are expected to be power-of-two, e.g. 1024x1024 or 1024x512)
 - Handles both plain (`compress_file=false`) and **file-compressed**
   (`compress_file=true`, LZHAM) containers
 - Decodes textures: **RGBA8, R8, DXT1 (BC1), DXT3 (BC2), DXT5 (BC3), ETC2,
