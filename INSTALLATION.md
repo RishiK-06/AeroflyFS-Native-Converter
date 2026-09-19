@@ -2,14 +2,9 @@
 
 Should work normally on **Windows**, **macOS** and **Linux**.
 
-The app window (screenshots generated from the real application):
+The app window (screen capture of the mode dropdown in the README):
 
-![Texture decode mode](docs/screenshots/01_textures_decode.png)
-![Texture encode mode](docs/screenshots/02_textures_encode.png)
-![Audio: TSB to WAV](docs/screenshots/03_audio_tsb.png)
-![Audio: MP3 to WAV](docs/screenshots/04_audio_mp3.png)
-![Scenery: TOC to JSON](docs/screenshots/05_scenery_toc.png)
-![After a conversion](docs/screenshots/06_after_convert.png)
+
 
 ---
 
@@ -193,7 +188,7 @@ python3 ttx_gui.py
 | MP3 → WAV | `.mp3` | `.wav` (16-bit PCM) |
 | FLAC → WAV | `.flac` | `.wav` (16-bit PCM) |
 | OGG → WAV | `.ogg` | `.wav` (16-bit PCM) |
-| TOC → JSON/TXT | `.toc` scenery table | `.json` + `.txt` |
+| Compressed → TXT (generic) | `.toc` / `.tsc` / `.wad` / `.tmb` / `.tsl` | `.txt` |
 
 The same conversions are available from the command line (no GUI). Use `python`
 on Windows, `python3` on macOS/Linux:
@@ -204,7 +199,7 @@ python ttx_converter.py <file.png> -t --format type_rgba   # PNG -> TTX
 python ttx_converter.py <file.tsb>                 # sound -> WAV
 python ttx_converter.py <file.wav>                 # WAV -> TSB
 python ttx_converter.py <file.mp3>                 # MP3 -> WAV
-python ttx_converter.py <file.toc>                 # table -> JSON + TXT
+python ttx_converter.py <file.toc>                 # compressed (.toc/.tsc/.wad/.tmb/.tsl) -> TXT
 ```
 
 ---
