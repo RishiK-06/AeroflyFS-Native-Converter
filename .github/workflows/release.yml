@@ -72,14 +72,14 @@ jobs:
           python - <<'PY'
           import os, shutil
           os.makedirs("artifacts", exist_ok=True)
-          stem = "AeroflyFS-Converter-${{ matrix.artifact }}"
+          stem = "AeroflyFS-Converter-CLI-${{ matrix.artifact }}"
           shutil.make_archive(f"artifacts/{stem}", "zip", root_dir="dist")
           print("wrote artifacts/" + stem + ".zip")
           PY
 
       - uses: actions/upload-artifact@v4
         with:
-          name: aerofly-converter-${{ matrix.artifact }}
+          name: AeroflyFS-Converter-CLI-${{ matrix.artifact }}
           path: artifacts/*.zip
           if-no-files-found: error
 
