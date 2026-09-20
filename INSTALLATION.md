@@ -188,7 +188,7 @@ python3 ttx_gui.py
 | MP3 → WAV | `.mp3` | `.wav` (16-bit PCM) |
 | FLAC → WAV | `.flac` | `.wav` (16-bit PCM) |
 | OGG → WAV | `.ogg` | `.wav` (16-bit PCM) |
-| Compressed → TXT (generic) | `.toc` / `.tsc` / `.wad` / `.tmb` / `.tsl` | `.txt` |
+| Compressed → TXT (generic) | `.toc` / `.tsc` / `.wad` / `.tmb` / `.tsl` | `.txt` (e.g. `name.tmb.txt`) |
 
 The same conversions are available from the command line (no GUI). Use `python`
 on Windows, `python3` on macOS/Linux:

@@ -33,7 +33,8 @@ Windows, macOS and Linux, Made with inspiration from AuroraBorealis's web conver
 - Decodes **MP3/FLAC/OGG → 16-bit WAV** (via `miniaudio`, codecs bundled)
 - Decodes compressed TM containers (**.toc / .tsc / .wad / .tmb / .tsl** —
   airports, cultivation, lights, plants, buildings, ...) → generic text tree
-  (flat type/name/value lines, no per-scheme JSON)
+  (flat type/name/value lines, no per-scheme JSON; output keeps the original
+  extension so files never overwrite each other: `name.tmb.txt`)
 - GUI extras: conversion types grouped by category, progress bar, live log,
   "Open output folder" after conversion
 
@@ -75,7 +76,7 @@ python ttx_converter.py <file.toc>  [--info]          # compressed (.toc/.tsc/.w
 
 ## Credits
 
-- **Chris Priv — [github.com/chrispriv](https://github.com/chrispriv)** — TM container
+- **Chrispriv — [github.com/chrispriv](https://github.com/chrispriv)** — TM container
   decoding for the compressed → TXT conversion (`.toc` / `.tsc` / `.wad` / `.tmb` / `.tsl`)
 - AuroraBorealis' web converter (Abflug) — inspiration for the texture/sound conversion,
   which unfortunately went offline

@@ -133,8 +133,14 @@ def _leaf_value(type_name: str, payload: bytes) -> tuple[str, list[str] | None]:
         vals = [str(struct.unpack_from("<i", payload, i)[0]) for i in range(0, len(payload) // 4 * 4, 4)]
         return " ".join(vals), None
     if type_name == "list_vector3_float32" and len(payload) >= 12:
-        vals = [_fmt_num(_f32(payload, i), True) for i in range(0, len(payload) // 4 * 4, 4)]
-        return " ".join(vals), None
+        n = len(payload) // 12 * 12
+        groups = []
+        for i in range(0, n, 12):
+            x = _fmt_num(_f32(payload, i), True)
+            y = _fmt_num(_f32(payload, i + 4), True)
+            z = _fmt_num(_f32(payload, i + 8), True)
+            groups.append(f"({x} {y} {z})")
+        return " ".join(groups) + " ", None
     if type_name == "matrix4_float64" and len(payload) >= 128:
         vals = [_fmt_num(_f64(payload, i)) for i in range(0, 128, 8)]
         return " ".join(vals), None

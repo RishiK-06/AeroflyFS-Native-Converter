@@ -246,7 +246,8 @@ class _ConvertWorker(QObject):
         for i, path in enumerate(self._files, 1):
             self.progress.emit(i, total)
             name = os.path.basename(path)
-            out = os.path.splitext(path)[0] + MODE_EXT[self._mode]
+            out = (path if self._mode == MODE_TOC
+                   else os.path.splitext(path)[0]) + MODE_EXT[self._mode]
             self.log.emit(
                 f"[{i}/{total}] {name} \u2192 {os.path.basename(out)}", ""
             )

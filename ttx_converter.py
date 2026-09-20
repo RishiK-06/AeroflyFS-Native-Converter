@@ -818,7 +818,7 @@ def _auto_cli(argv=None):
             if low.endswith((".toc", ".tsc", ".wad", ".tmb", ".tsl")):
                 from toc_decoder import toc_to_txt
 
-                out = args.output or (os.path.splitext(f)[0] + ".txt")
+                out = args.output or (f + ".txt")
                 doc = toc_to_txt(f, out,
                                  status=lambda msg: print(f"    {msg}"))
                 print(f"    {doc['variant']} placement_count={doc['placement_count']}")
