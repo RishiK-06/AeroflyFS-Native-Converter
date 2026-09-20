@@ -47,6 +47,7 @@ jobs:
           python -m PyInstaller --noconfirm --onefile --windowed \
             "${ICON[@]}" \
             --name "AeroflyFS-Converter" \
+            --collect-all wasmtime \
             --add-data "tmcompress.wasm${{ matrix.sep }}." \
             --add-data "assets${{ matrix.sep }}assets" \
             ttx_gui.py
@@ -56,6 +57,7 @@ jobs:
         run: |
           python -m PyInstaller --noconfirm --onefile \
             --name "AeroflyFS-Converter-CLI" \
+            --collect-all wasmtime \
             --add-data "tmcompress.wasm${{ matrix.sep }}." \
             --add-data "assets${{ matrix.sep }}assets" \
             ttx_converter.py
@@ -65,6 +67,7 @@ jobs:
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then BIN=dist/AeroflyFS-Converter-CLI.exe; else BIN=dist/AeroflyFS-Converter-CLI; fi
           "$BIN" --help >/dev/null && echo "CLI binary OK"
+          "$BIN" --selftest-wasmtime && echo "wasmtime bundled OK"
 
       - name: Package zips
         shell: bash

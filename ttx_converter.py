@@ -737,7 +737,7 @@ def _auto_cli(argv=None):
         p = argparse.ArgumentParser(
             description="Convert Aerofly FS .ttx/.tsb/compressed container files and audio"
         )
-        p.add_argument("paths", nargs="+",
+        p.add_argument("paths", nargs="*",
                        help=".ttx/.png/.tsb/.toc/.tsc/.wad/.tmb/.tsl/.wav/.mp3/.flac/.ogg "
                             "file(s) or folder(s)")
         p.add_argument("-o", "--output", help="Output file name (single file only)")
@@ -749,12 +749,23 @@ def _auto_cli(argv=None):
         p.add_argument("--flip", action="store_true",
                        help="Flip vertically (for liveries)")
         p.add_argument("--info", action="store_true", help="Print info only")
+        p.add_argument("--selftest-wasmtime", action="store_true",
+                       help="Verify wasmtime native lib + tmcompress.wasm load, then exit")
         args = p.parse_args(argv)
     except ImportError:
         args = None
 
     import fnmatch
     from pathlib import Path
+
+    if args.selftest_wasmtime:
+        try:
+            _load_lzham()
+        except Exception as exc:
+            print(f"WASMTIME SELFTEST FAILED: {exc}")
+            return 2
+        print("WASMTIME SELFTEST OK: native lib + tmcompress.wasm loaded")
+        return 0
 
     DEFAULT_PATS = (
         "*.ttx", "*.tsb", "*.toc", "*.tsc", "*.wad", "*.tmb", "*.tsl",
