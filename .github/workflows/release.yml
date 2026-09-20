@@ -37,6 +37,28 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install "pyinstaller>=6.6"
 
+      - name: Locate wasmtime native lib
+        shell: bash
+        run: |
+          SPEC=$(python - <<'PY'
+          import os, platform, sys
+          from pathlib import Path
+          import wasmtime
+          plat = {'linux': 'linux', 'win32': 'win32', 'darwin': 'darwin'}[sys.platform]
+          mach = platform.machine()
+          if mach == 'AMD64':
+              mach = 'x86_64'
+          if mach in ('arm64', 'ARM64'):
+              mach = 'aarch64'
+          lib = {'linux': '_libwasmtime.so', 'win32': '_wasmtime.dll', 'darwin': '_libwasmtime.dylib'}[sys.platform]
+          src = Path(wasmtime.__file__).parent / f'{plat}-{mach}' / lib
+          assert src.exists(), f'wasmtime native lib missing: {src}'
+          print(f'{src}{os.pathsep}wasmtime/{plat}-{mach}')
+          PY
+          )
+          echo "WASMTIME_SPEC=$SPEC" >> "$GITHUB_ENV"
+          echo "wasmtime lib: $SPEC"
+
       - name: Build GUI binary
         shell: bash
         run: |
@@ -48,6 +70,7 @@ jobs:
             "${ICON[@]}" \
             --name "AeroflyFS-Converter" \
             --collect-all wasmtime \
+            --add-binary "$WASMTIME_SPEC" \
             --add-data "tmcompress.wasm${{ matrix.sep }}." \
             --add-data "assets${{ matrix.sep }}assets" \
             ttx_gui.py
@@ -58,6 +81,7 @@ jobs:
           python -m PyInstaller --noconfirm --onefile \
             --name "AeroflyFS-Converter-CLI" \
             --collect-all wasmtime \
+            --add-binary "$WASMTIME_SPEC" \
             --add-data "tmcompress.wasm${{ matrix.sep }}." \
             --add-data "assets${{ matrix.sep }}assets" \
             ttx_converter.py
