@@ -55,7 +55,7 @@ jobs:
         shell: bash
         run: |
           python -m PyInstaller --noconfirm --onefile \
-            --name "aerofly-converter" \
+            --name "AeroflyFS-Converter-CLI" \
             --add-data "tmcompress.wasm${{ matrix.sep }}." \
             --add-data "assets${{ matrix.sep }}assets" \
             ttx_converter.py
@@ -63,7 +63,7 @@ jobs:
       - name: Smoke-test the CLI binary
         shell: bash
         run: |
-          if [[ "$RUNNER_OS" == "Windows" ]]; then BIN=dist/aerofly-converter.exe; else BIN=dist/aerofly-converter; fi
+          if [[ "$RUNNER_OS" == "Windows" ]]; then BIN=dist/AeroflyFS-Converter-CLI.exe; else BIN=dist/AeroflyFS-Converter-CLI; fi
           "$BIN" --help >/dev/null && echo "CLI binary OK"
 
       - name: Package zips

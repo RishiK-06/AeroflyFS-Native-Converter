@@ -40,6 +40,12 @@ Windows, macOS and Linux, Made with inspiration from AuroraBorealis's web conver
 
 ## Install
 
+**Easiest:** grab the ready-to-run ZIP for your OS from the
+[Releases](https://github.com/RishiK-06/AeroflyFS-Native-Converter/releases)
+page — no Python or pip needed.
+
+**Run from source:**
+
 ```bash
 pip install -r requirements.txt
 ```

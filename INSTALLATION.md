@@ -10,43 +10,57 @@ The app window (screen capture of the mode dropdown in the README):
 
 ## What you need
 
+**Option A — ready-to-run binaries (simplest):** nothing. Download the ZIP for
+your OS from the **Releases** page, unzip it, and double-click — Python and all
+libraries are bundled inside the executable.
+
+**Option B — run from Python source:**
 1. **Python 3.9 or newer** from [python.org](https://www.python.org/downloads/)
    (download the latest 3.12/3.13 installer).
 2. An internet connection for one `pip install` command.
 
-The app itself does **not** need internet, ffmpeg, or any system codecs.
-MP3 / FLAC / OGG decoding uses the `miniaudio` package (decoders included in the wheel).
+Either way, the app itself does **not** need internet, ffmpeg, or any system
+codecs. MP3 / FLAC / OGG decoding uses a bundled decoder.
 
 ---
 
 ## Get the app (all platforms)
 
-**Option A — download the ZIP (simplest):**
+**Option A — prebuilt binaries (no Python needed):**
+
+1. Open the **Releases** page:
+   <https://github.com/RishiK-06/AeroflyFS-Native-Converter/releases>
+2. Under the latest release (e.g. **v1.0.0**) download the ZIP for your OS:
+   - `AeroflyFS-Converter-windows.zip` — Windows 10/11 x64
+   - `AeroflyFS-Converter-macos.zip` — macOS (Apple Silicon / M1+)
+   - `AeroflyFS-Converter-linux.zip` — Linux x86_64
+3. Extract the ZIP anywhere you like.
+4. Run the app:
+   - **Windows:** double-click `AeroflyFS-Converter.exe`
+   - **macOS:** right-click `AeroflyFS-Converter` → **Open** the first time (the
+     binary is unsigned, so macOS shows "unidentified developer"); afterwards you
+     can just double-click it
+   - **Linux:** double-click `AeroflyFS-Converter` (or run it from a terminal); if
+     the GUI does not start, install the Qt xcb plugin with
+     `sudo apt install libxcb-cursor0`
+
+**Option B — run from source (Python):**
 
 1. Open <https://github.com/RishiK-06/AeroflyFS-Native-Converter>.
-2. Click the green **Code** button → **Download ZIP**.
-3. Extract the ZIP anywhere you like. The folder is named
-   `AeroflyFS-Native-Converter-main`.
+2. Click the green **Code** button → **Download ZIP** (the folder is named
+   `AeroflyFS-Native-Converter-main`), or clone with git:
 
-**Option B — clone with git (if you use git):**
+   ```bash
+   git clone https://github.com/RishiK-06/AeroflyFS-Native-Converter.git
+   ```
+3. Follow your platform's steps under **Run from source (Python)** below.
 
-```bash
-git clone https://github.com/RishiK-06/AeroflyFS-Native-Converter.git
-```
+## Run from source (Python)
 
-Then open a terminal and go into the folder:
+If you picked **Option B** above, open a terminal, go into the app folder and
+follow your platform's steps.
 
-```bash
-cd AeroflyFS-Native-Converter-main    # ZIP download
-# or
-cd AeroflyFS-Native-Converter         # git clone
-```
-
-All commands below are run from inside this folder.
-
----
-
-## Windows
+### Windows
 
 ### Step 1 — Install Python
 
@@ -76,7 +90,7 @@ python ttx_gui.py
 
 ---
 
-## macOS
+### macOS
 
 ### Step 1 — Install Python
 
@@ -137,7 +151,7 @@ chmod +x ~/Desktop/Aerofly\ Converter.command
 
 ---
 
-## Linux (Debian / Ubuntu / Mint)
+### Linux (Debian / Ubuntu / Mint)
 
 **First-time install:**
 
