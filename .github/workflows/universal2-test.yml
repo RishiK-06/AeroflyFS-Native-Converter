@@ -1,0 +1,69 @@
+name: Universal2 prototype (manual, no release)
+
+# Prototype only: proves an Intel+ARM macOS binary can be built in CI.
+# Manual dispatch, uploads a test artifact, never touches releases.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build universal2 CLI (test)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install universal2 Python 3.11 (python.org)
+        run: |
+          curl -sSL -o /tmp/python.pkg https://www.python.org/ftp/python/3.11.9/python-3.11.9-macos11.pkg
+          sudo installer -pkg /tmp/python.pkg -target /
+          PY=/Library/Frameworks/Python.framework/Versions/3.11/bin/python3
+          $PY --version
+          lipo -info /Library/Frameworks/Python.framework/Versions/3.11/Python
+
+      - name: Install Python deps + PyInstaller
+        run: |
+          PY=/Library/Frameworks/Python.framework/Versions/3.11/bin/python3
+          $PY -m pip install --upgrade pip
+          $PY -m pip install -r requirements.txt
+          $PY -m pip install "pyinstaller>=6.6"
+
+      - name: Build CLI universal2 binary
+        run: |
+          PY=/Library/Frameworks/Python.framework/Versions/3.11/bin/python3
+          SPECS=$($PY - <<'PY'
+          import os
+          from pathlib import Path
+          import wasmtime
+          base = Path(wasmtime.__file__).parent
+          out = []
+          for arch in ("darwin-x86_64", "darwin-aarch64"):
+              src = base / arch / "_libwasmtime.dylib"
+              assert src.exists(), f"wasmtime native lib missing: {src}"
+              out.append(f"{src}{os.pathsep}wasmtime/{arch}")
+          print(" ".join(out))
+          PY
+          )
+          echo "wasmtime specs: $SPECS"
+          ARGS=()
+          for s in $SPECS; do ARGS+=(--add-binary "$s"); done
+          $PY -m PyInstaller --noconfirm --onefile --target-arch universal2 \
+            --name "AeroflyFS-Converter-CLI-uni2test" \
+            --collect-all wasmtime \
+            "${ARGS[@]}" \
+            --add-data "tmcompress.wasm:." \
+            --add-data "assets:assets" \
+            ttx_converter.py
+
+      - name: Verify universal2 slices + wasmtime selftest
+        run: |
+          lipo -info dist/AeroflyFS-Converter-CLI-uni2test
+          ./dist/AeroflyFS-Converter-CLI-uni2test --selftest-wasmtime
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: universal2-cli-prototype
+          path: dist/AeroflyFS-Converter-CLI-uni2test
+          if-no-files-found: error
