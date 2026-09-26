@@ -1,7 +1,9 @@
 name: Universal2 prototype (manual, no release)
 
-# Prototype only: proves an Intel+ARM macOS binary can be built in CI.
+# Prototype only: proves an Intel+ARM macOS CLI binary can be built in CI.
 # Manual dispatch, uploads a test artifact, never touches releases.
+# Strategy: universal2 python.org interpreter + lipo-merge thin x86_64 wheels
+# into the installed arm64 packages, then PyInstaller --target-arch universal2.
 on:
   workflow_dispatch:
 
@@ -23,36 +25,61 @@ jobs:
           $PY --version
           lipo -info /Library/Frameworks/Python.framework/Versions/3.11/Python
 
-      - name: Install Python deps + PyInstaller
+      - name: Install Python deps + PyInstaller (arm64 wheels)
         run: |
           PY=/Library/Frameworks/Python.framework/Versions/3.11/bin/python3
           $PY -m pip install --upgrade pip
           $PY -m pip install -r requirements.txt
           $PY -m pip install "pyinstaller>=6.6"
+          $PY -c "import PIL, wasmtime, texture2ddecoder, miniaudio; print('arm64 imports OK')"
+
+      - name: Merge x86_64 slices into installed packages (lipo)
+        run: |
+          PY=/Library/Frameworks/Python.framework/Versions/3.11/bin/python3
+          SITE=$($PY -c "import site; print(site.getsitepackages()[0])")
+          echo "site-packages: $SITE"
+          mkdir -p /tmp/x64wheels /tmp/x64site
+          # Download x86_64 wheels for every package with native code (CLI set only)
+          for pkg in Pillow wasmtime texture2ddecoder miniaudio cffi; do
+            ver=$($PY -m pip show $pkg 2>/dev/null | awk '/^Version:/{print $2}')
+            echo "== $pkg $ver"
+            $PY -m pip download --no-deps --only-binary=:all \
+              --python-version 311 --platform macosx_11_0_x86_64 \
+              "$pkg==$ver" -d /tmp/x64wheels
+          done
+          for whl in /tmp/x64wheels/*.whl; do
+            $PY -m zipfile -e "$whl" /tmp/x64site 2>/dev/null || unzip -q -o "$whl" -d /tmp/x64site
+          done
+          # lipo-merge every thin arm64 binary with its x86_64 counterpart
+          MERGED=0
+          SKIPPED=0
+          while IFS= read -r f; do
+            rel=${f#$SITE/}
+            x64=/tmp/x64site/$rel
+            if [ -f "$x64" ]; then
+              if lipo -create "$f" "$x64" -output "$f.merged" 2>/dev/null; then
+                mv "$f.merged" "$f"
+                MERGED=$((MERGED + 1))
+              else
+                SKIPPED=$((SKIPPED + 1))
+              fi
+            fi
+          done < <(find "$SITE" \( -name "*.so" -o -name "*.dylib" \) -type f)
+          echo "merged=$MERGED skipped=$SKIPPED"
+          # wasmtime loader picks dir by arch: put a fat dylib in BOTH dirs
+          cp "$SITE/wasmtime/darwin-aarch64/_libwasmtime.dylib" /tmp/fat.dylib
+          cp /tmp/fat.dylib "$SITE/wasmtime/darwin-x86_64/_libwasmtime.dylib"
+          ls "$SITE/wasmtime/darwin-x86_64" "$SITE/wasmtime/darwin-aarch64"
 
       - name: Build CLI universal2 binary
         run: |
           PY=/Library/Frameworks/Python.framework/Versions/3.11/bin/python3
-          SPECS=$($PY - <<'PY'
-          import os
-          from pathlib import Path
-          import wasmtime
-          base = Path(wasmtime.__file__).parent
-          out = []
-          for arch in ("darwin-x86_64", "darwin-aarch64"):
-              src = base / arch / "_libwasmtime.dylib"
-              assert src.exists(), f"wasmtime native lib missing: {src}"
-              out.append(f"{src}{os.pathsep}wasmtime/{arch}")
-          print(" ".join(out))
-          PY
-          )
-          echo "wasmtime specs: $SPECS"
-          ARGS=()
-          for s in $SPECS; do ARGS+=(--add-binary "$s"); done
+          SITE=$($PY -c "import site; print(site.getsitepackages()[0])")
           $PY -m PyInstaller --noconfirm --onefile --target-arch universal2 \
             --name "AeroflyFS-Converter-CLI-uni2test" \
             --collect-all wasmtime \
-            "${ARGS[@]}" \
+            --add-binary "$SITE/wasmtime/darwin-x86_64/_libwasmtime.dylib:wasmtime/darwin-x86_64" \
+            --add-binary "$SITE/wasmtime/darwin-aarch64/_libwasmtime.dylib:wasmtime/darwin-aarch64" \
             --add-data "tmcompress.wasm:." \
             --add-data "assets:assets" \
             ttx_converter.py
