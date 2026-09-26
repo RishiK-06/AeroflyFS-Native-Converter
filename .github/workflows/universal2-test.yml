@@ -66,8 +66,14 @@ jobs:
             fi
           done < <(find "$SITE" \( -name "*.so" -o -name "*.dylib" \) -type f)
           echo "merged=$MERGED skipped=$SKIPPED"
-          # wasmtime loader picks dir by arch: put a fat dylib in BOTH dirs
-          cp "$SITE/wasmtime/darwin-aarch64/_libwasmtime.dylib" /tmp/fat.dylib
+          # wasmtime loader picks dir by arch (darwin-x86_64 vs darwin-aarch64),
+          # so merge the two arch dylibs explicitly and put the fat lib in BOTH dirs
+          lipo -create \
+            "$SITE/wasmtime/darwin-aarch64/_libwasmtime.dylib" \
+            /tmp/x64site/wasmtime/darwin-x86_64/_libwasmtime.dylib \
+            -output /tmp/fat.dylib
+          mkdir -p "$SITE/wasmtime/darwin-x86_64"
+          cp /tmp/fat.dylib "$SITE/wasmtime/darwin-aarch64/_libwasmtime.dylib"
           cp /tmp/fat.dylib "$SITE/wasmtime/darwin-x86_64/_libwasmtime.dylib"
           ls "$SITE/wasmtime/darwin-x86_64" "$SITE/wasmtime/darwin-aarch64"
 
