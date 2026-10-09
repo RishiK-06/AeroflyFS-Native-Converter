@@ -430,6 +430,12 @@ def _log(msg: str) -> None:
 
 
 def _auto_cli(argv=None) -> int:
+    # Same frozen-console guard as ttx_converter (cp1252 vs arrow glyphs).
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
     p = argparse.ArgumentParser(
         description="Convert Aerofly FS scenery .ttc textures (DXT1/DXT5/ETC2/R8 mask)"
     )

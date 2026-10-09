@@ -80,7 +80,12 @@ python -m pip install -r requirements.txt
 You should see `Successfully installed PySide6-Essentials ...` (plus Pillow,
 wasmtime, texture2ddecoder, miniaudio, etcpak, astc-encoder-py, pylzham).
 On macOS the `pylzham` build needs no extra setup in CI; locally, a C
-compiler is required (Xcode command line tools).
+compiler is required (Xcode command line tools). On Windows from-source
+installs, `pylzham` needs Microsoft C++ Build Tools
+(https://visualstudio.microsoft.com/visual-cpp-build-tools/) installed
+*before* `pip install -r requirements.txt` — without it, PNG → TTX
+encoding fails with "needs the 'pylzham' package". (Release .zip
+executables already include it, so most users never hit this.)
 
 ### Step 3 — Run the app
 

@@ -774,7 +774,9 @@ def _compress_file_container(plain: bytes) -> bytes:
     except ImportError:
         raise TtxError(
             "TTX compress_file encode needs the 'pylzham' package. "
-            "Install it with:  pip install pylzham"
+            "Release .exe/.zip builds already include it - update to the latest "
+            "release. From source on Windows: install Microsoft C++ Build Tools "
+            "first, then run:  pip install pylzham"
         )
     inner = plain[32:]
     raw = lzham.compress(
@@ -1108,6 +1110,13 @@ def _auto_cli(argv=None):
       .mp3/.flac/.ogg -> .wav    python ttx_converter.py in.mp3 [-o out.wav]
       .toc/.tsc/.wad/.tmb/.tsl -> .txt  python ttx_converter.py in.toc [-o out.txt]"""
     argv = list(sys.argv[1:] if argv is None else argv)
+    # Frozen .exe on legacy Windows consoles (cp1252) crashes printing
+    # arrow status lines. Keep the console encoding, replace unencodables.
+    try:
+        sys.stdout.reconfigure(errors="replace")
+        sys.stderr.reconfigure(errors="replace")
+    except Exception:
+        pass
     try:
         import argparse
 
