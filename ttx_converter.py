@@ -141,19 +141,35 @@ def _inflate_raw(data: bytes):
     if payload is None:
         return None
 
-    in_ptr = malloc_fn(store, plen)
+    try:
+        in_ptr = malloc_fn(store, plen)
+    except Exception as exc:
+        raise TtxError(f"LZHAM inflate failed (wasm OOM on input): {exc}") from exc
     if not in_ptr:
         return None
     try:
         mem.write(store, bytes(data[payload : payload + plen]), in_ptr)
-        unc = unc_size_fn(store, in_ptr, plen)
+        try:
+            unc = unc_size_fn(store, in_ptr, plen)
+        except Exception as exc:
+            raise TtxError(f"LZHAM inflate failed (wasm size probe): {exc}") from exc
         if unc <= 0 or unc > (1 << 31):
             return None
-        out_ptr = malloc_fn(store, unc)
+        # ext06 lesson: unc can exceed the default 64 MiB wasm memory
+        # (4096x4096 RGBA chain ~85 MiB). Grow linear memory to fit
+        # input + output + slack instead of faulting out of bounds.
+        _ensure_wasm_capacity(mem, store, plen + unc + (1 << 20))
+        try:
+            out_ptr = malloc_fn(store, unc)
+        except Exception as exc:
+            raise TtxError(f"LZHAM inflate failed (wasm OOM on output): {exc}") from exc
         if not out_ptr:
             return None
         try:
-            n = inflate_fn(store, in_ptr, plen, out_ptr, unc)
+            try:
+                n = inflate_fn(store, in_ptr, plen, out_ptr, unc)
+            except Exception as exc:
+                raise TtxError(f"LZHAM inflate failed (wasm trap): {exc}") from exc
             if n <= 0:
                 return None
             return bytes(mem.read(store, out_ptr, out_ptr + n))
@@ -161,6 +177,23 @@ def _inflate_raw(data: bytes):
             free_fn(store, out_ptr)
     finally:
         free_fn(store, in_ptr)
+
+
+def _ensure_wasm_capacity(mem, store, need: int) -> None:
+    """Grow wasm linear memory so ``need`` bytes fit (ext06: 85 MiB unc)."""
+    try:
+        have = mem.data_len(store)
+    except Exception:
+        return
+    if need <= have:
+        return
+    pages = (need - have + 0xFFFF) // 0x10000
+    try:
+        mem.grow(store, pages)
+    except Exception as exc:
+        raise TtxError(
+            f"texture needs ~{need // (1 << 20)} MiB wasm memory: {exc}"
+        ) from exc
 
 
 def _u32(b: bytes, off: int) -> int:
