@@ -165,6 +165,48 @@ def _leaf_value(type_name: str, payload: bytes) -> tuple[str, list[str] | None]:
     return _fmt_blob(payload)
 
 
+def _derived_num_vertices(data: bytes, start: int, end: int) -> int | None:
+    """Official text counts vertices as len(vertices)/vf_size; the uint32 is often 0."""
+    off = start
+    vf_size = None
+    nfloat = None
+    stored = None
+    while off + 32 <= end:
+        nam = data[off + 8 : off + 16]
+        size = _u64(data, off + 16)
+        hs = _u64(data, off + 24)
+        step = _step(size, hs)
+        if off + step > end:
+            if int(size) >= 32 and off + int(size) <= end:
+                step = int(size)
+            else:
+                break
+        payload_len = max(0, int(size) - 32)
+        payload = data[off + 32 : off + 32 + min(payload_len, step - 32)]
+        field = NAME_IDS.get(_hex_id(nam), "")
+        if field == "num_vertices":
+            stored = struct.unpack_from("<I", payload, 0)[0] if len(payload) >= 4 else 0
+        elif field == "vf_size" and len(payload) >= 4:
+            vf_size = struct.unpack_from("<i", payload, 0)[0]
+        elif field == "vertices" and len(payload) >= 4:
+            nfloat = len(payload) // 4
+        off += step
+    if stored not in (None, 0):
+        return None
+    if not vf_size or vf_size <= 0 or not nfloat:
+        return None
+    if nfloat % vf_size:
+        return None
+    return nfloat // vf_size
+
+
+def _fill_num_vertices_line(lines: list[str], indent: int, count: int) -> list[str]:
+    pad = " " * indent
+    old = f"{pad}<[uint32][num_vertices][0]>"
+    new = f"{pad}<[uint32][num_vertices][{count}]>"
+    return [new if ln == old else ln for ln in lines]
+
+
 def _emit_node(
     data: bytes,
     start: int,
@@ -213,7 +255,11 @@ def _emit_node(
             if is_list_item:
                 item_index += 1
             lines.append(f"{pad}<[{type_name}][{field_name}][{value}]")
-            lines.extend(_emit_node(data, off + 32, off + step, indent + 4, typ, nam))
+            child_lines = _emit_node(data, off + 32, off + step, indent + 4, typ, nam)
+            derived = _derived_num_vertices(data, off + 32, off + step)
+            if derived is not None:
+                child_lines = _fill_num_vertices_line(child_lines, indent + 4, derived)
+            lines.extend(child_lines)
             lines.append(f"{pad}>")
         else:
             value, extra = _leaf_value(type_name, payload)

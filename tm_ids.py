@@ -122,6 +122,7 @@ NAME_IDS = {
     'd40bd8e6e813dffb': 'name2',
     'd658cb2344699d11': 'num_faces',
     'da4f266dd7735a03': 'num_plants',
+    'a92b91f6206f11ad': 'num_vertices',
     'f1f791dd014a7d01': 'objects',
     '6783a0538fee42ed': 'objects_animated',
     'd3c8047d8080d307': 'orientation',
