@@ -34,8 +34,9 @@ jobs:
             libxcb-xinerama0 libxcb-xfixes0 xvfb
 
       - name: Install Python deps
+        env:
+          ARCHFLAGS: ${{ runner.os == 'macOS' && '-arch arm64' || '' }}
         run: |
-          if [ "$RUNNER_OS" = "macOS" ]; then export ARCHFLAGS="-arch arm64"; fi
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
