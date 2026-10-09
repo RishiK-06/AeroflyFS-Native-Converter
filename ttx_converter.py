@@ -74,9 +74,13 @@ def _load_lzham():
         ) from exc
     i32 = ValType.i32()
     # WebAssembly runtime imports; all are safe no-ops for a pure inflate call.
-    a_a = Func(store, FuncType([i32, i32, i32, i32], [i32]), lambda caller, a, b, c, d: 0)
-    a_b = Func(store, FuncType([i32], [i32]), lambda caller, a: 1)
-    a_c = Func(store, FuncType([i32], []), lambda caller, a: None)
+    # NOTE: wasmtime calls host funcs with ONLY the declared params (no
+    # `caller` first arg) on current versions, while older versions passed a
+    # caller. `*args` stays correct under both conventions -- see ext06 issue
+    # where a stream invoked an import and `lambda caller, ...` raised TypeError.
+    a_a = Func(store, FuncType([i32, i32, i32, i32], [i32]), lambda *args: 0)
+    a_b = Func(store, FuncType([i32], [i32]), lambda *args: 1)
+    a_c = Func(store, FuncType([i32], []), lambda *args: None)
     inst = Instance(store, module, [a_a, a_b, a_c])
     ex = inst.exports(store)
     loader = {
