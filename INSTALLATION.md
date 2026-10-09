@@ -87,6 +87,14 @@ installs, `pylzham` needs Microsoft C++ Build Tools
 encoding fails with "needs the 'pylzham' package". (Release .zip
 executables already include it, so most users never hit this.)
 
+No compiler? Install a prebuilt wheel instead (pick your Python/OS from
+https://github.com/RishiK-06/AeroflyFS-Native-Converter/releases/tag/pylzham-wheels),
+e.g. on Windows with Python 3.13:
+
+```powershell
+pip install https://github.com/RishiK-06/AeroflyFS-Native-Converter/releases/download/pylzham-wheels/pylzham-0.1.3-cp313-cp313-win_amd64.whl
+```
+
 ### Step 3 — Run the app
 
 ```powershell
