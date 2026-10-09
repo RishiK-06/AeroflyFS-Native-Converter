@@ -5,6 +5,6 @@ Pillow>=10.0.0
 texture2ddecoder>=1.0.6
 etcpak
 astc-encoder-py
-pylzham
+pylzham==0.1.3
 miniaudio>=1.60
 PySide6>=6.8.0
