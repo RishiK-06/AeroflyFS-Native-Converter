@@ -78,7 +78,9 @@ python -m pip install -r requirements.txt
 ```
 
 You should see `Successfully installed PySide6-Essentials ...` (plus Pillow,
-wasmtime, texture2ddecoder, miniaudio).
+wasmtime, texture2ddecoder, miniaudio, etcpak, astc-encoder-py, pylzham).
+On macOS the `pylzham` build needs no extra setup in CI; locally, a C
+compiler is required (Xcode command line tools).
 
 ### Step 3 — Run the app
 
