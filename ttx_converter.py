@@ -36,20 +36,42 @@ def _load_lzham():
         return _lzham_cache["loader"]
     try:
         from wasmtime import Engine, Func, FuncType, Instance, Module, Store, ValType
-    except ImportError:
+    except ImportError as exc:
+        detail = str(exc)
+        if "_wasmtime" in detail or "dynlib" in detail.lower():
+            raise TtxError(
+                "Wasmtime native library failed to load (_wasmtime.dll / "
+                "_libwasmtime.so / _libwasmtime.dylib). From source: pip install wasmtime. "
+                "Frozen .exe: rebuild with --collect-all wasmtime and --add-binary "
+                "for wasmtime/<platform-arch> (see build_frozen.py)."
+            ) from exc
         raise TtxError(
             "The 'wasmtime' package is required to decompress LZHAM-compressed "
             "textures. Install it with:  pip install wasmtime"
-        )
+        ) from exc
+    except OSError as exc:
+        raise TtxError(
+            "Wasmtime native library failed to load (_wasmtime.dll / "
+            "_libwasmtime.so / _libwasmtime.dylib). From source: pip install wasmtime. "
+            "Frozen .exe: rebuild with --collect-all wasmtime and --add-binary "
+            "for wasmtime/<platform-arch> (see build_frozen.py)."
+        ) from exc
     wasm_path = os.path.join(_base_dir(__file__), "tmcompress.wasm")
     if not os.path.exists(wasm_path):
         raise TtxError(
             "tmcompress.wasm not found next to ttx_converter.py. Restore the "
             "tmcompress.wasm file (see INSTALLATION.md)."
         )
-    engine = Engine()
-    store = Store(engine)
-    module = Module.from_file(engine, wasm_path)
+    try:
+        engine = Engine()
+        store = Store(engine)
+        module = Module.from_file(engine, wasm_path)
+    except OSError as exc:
+        raise TtxError(
+            "Wasmtime native library failed to load while opening tmcompress.wasm. "
+            "Frozen builds must bundle _wasmtime.dll next to the wasmtime package "
+            "(see build_frozen.py)."
+        ) from exc
     i32 = ValType.i32()
     # WebAssembly runtime imports; all are safe no-ops for a pure inflate call.
     a_a = Func(store, FuncType([i32, i32, i32, i32], [i32]), lambda caller, a, b, c, d: 0)
@@ -432,13 +454,28 @@ def ttx_to_png(
         if not result["po2"]:
             status(_po2_warning(result["width"], result["height"]))
         status("Writing PNG ...")
-    _save_png(out_path, result["rgba"], result["width"], result["height"])
+    _save_png(
+        out_path,
+        result["rgba"],
+        result["width"],
+        result["height"],
+        mode=_png_mode_for_format(result["format"]),
+    )
     if status:
         status("Done.")
     return result
 
 
-def _save_png(path: str, rgba: bytes, w: int, h: int) -> None:
+def _png_mode_for_format(fmt: str) -> str:
+    """Opaque GPU RGB formats → 24-bit PNG. Formats with alpha stay RGBA."""
+    if fmt in ("type_rgb_s3tc_dxt1", "type_rgb_etc2", "type_rgb_etc1"):
+        return "RGB"
+    if fmt.startswith("type_rgb_astc_"):
+        return "RGB"
+    return "RGBA"
+
+
+def _save_png(path: str, rgba: bytes, w: int, h: int, mode: str = "RGBA") -> None:
     try:
         from PIL import Image
     except ImportError:
@@ -447,7 +484,38 @@ def _save_png(path: str, rgba: bytes, w: int, h: int) -> None:
         )
         raise TtxError(linetext)
     img = Image.frombytes("RGBA", (w, h), bytes(rgba))
+    if mode == "RGB":
+        img = img.convert("RGB")
     img.save(path, "PNG")
+
+
+ENCODE_REVISION = "mips+LZHAM"
+
+# TM type / name IDs observed on IPACS TTX (see tm_ids.py / TTX_FORMAT.md)
+_TYPE_STRING8 = bytes.fromhex("626e73bd8c7628a4")
+_TYPE_INT32 = bytes.fromhex("a223d13e723446c3")
+_TYPE_UINT32 = bytes.fromhex("9e8caf8498703ec2")
+_TYPE_UINT64 = bytes.fromhex("bc628ed22a7082f3")
+_TYPE_LIST_U8 = bytes.fromhex("9e76560202020202")
+_NAME_OUTER = bytes.fromhex("c3e386cb206d5fec")
+_NAME_NESTED = bytes.fromhex("ce25086b845bd426")
+_NAME_TYPE = bytes.fromhex("7760d7aaef9e7abb")
+_NAME_TARGET = bytes.fromhex("3843ed38abf750ef")
+_NAME_WIDTH = bytes.fromhex("8d2fb0411a10b566")
+_NAME_HEIGHT = bytes.fromhex("c6ef1dc0d6753c0b")
+_NAME_LAYERS = bytes.fromhex("9e6f762f839d2bf2")
+_NAME_MIPS = bytes.fromhex("51af1172e6fd50f9")
+_NAME_PIXELS = bytes.fromhex("7fc676a557237c3d")
+_NAME_SIZE_UNCOMP = bytes.fromhex("ce52fa6eeab214e0")
+_NAME_SIZE_COMP = bytes.fromhex("830052acb2538fa0")
+_NAME_CRC_UNCOMP = bytes.fromhex("e85a613f0a820d7c")
+_NAME_CRC_COMP = bytes.fromhex("195fe06aabefe29c")
+_NAME_COMP_BLOB = bytes.fromhex("9cb7d88489f1f234")
+_TMCOMPRESS_MAGIC = 0xA810BEF4
+_TMCOMPRESS_CONST = 0x17F34DF32797945C
+_LZHAM_ZLIB_HDR = bytes([0x6E, 0xCD])  # zlib-style CMF/FLG used with dict_log2=21
+_LZHAM_DICT_LOG2 = 21
+_LZHAM_TABLE_RATE = 20
 
 
 # ---------------------------------------------------------------------------
@@ -459,7 +527,35 @@ ENCODABLE_FORMATS = {
     "type_r": "Grayscale R8",
     "type_rgb_s3tc_dxt1": "DXT1 (BC1, no alpha)",
     "type_rgba_s3tc_dxt5": "DXT5 (BC3, alpha)",
+    "type_rgb_etc2": "ETC2 RGB (mobile)",
+    "type_rgba_etc2": "ETC2 RGBA (mobile, alpha)",
+    "type_rgb_astc_6x6": "ASTC 6x6 RGB (mobile)",
+    "type_rgba_astc_6x6": "ASTC 6x6 RGBA (mobile, alpha)",
 }
+
+FORMAT_ALIASES = {
+    "astc6x6": "type_rgb_astc_6x6",
+    "astc_6x6": "type_rgb_astc_6x6",
+    "etc2": "type_rgb_etc2",
+    "dxt1": "type_rgb_s3tc_dxt1",
+    "dxt5": "type_rgba_s3tc_dxt5",
+}
+
+AUTO_DXT_FORMATS = {"dxt_auto", "dxt1/5"}
+
+
+def _canonical_format(fmt: str) -> str:
+    return FORMAT_ALIASES.get(fmt, fmt)
+
+
+def _png_has_useful_alpha(img) -> bool:
+    """True if any pixel is not fully opaque (IPACS: all-255 alpha → DXT1)."""
+    if img.mode == "P" and "transparency" in img.info:
+        img = img.convert("RGBA")
+    if img.mode in ("RGBA", "LA"):
+        mn, mx = img.getchannel("A").getextrema()
+        return mn < 255
+    return False
 
 
 def encode_png(
@@ -469,9 +565,8 @@ def encode_png(
     flip: bool = False,
     status=None,
 ) -> dict:
-    """Encode a PNG/JPG image to a plain (uncompressed) .ttx container."""
-    if fmt not in ENCODABLE_FORMATS:
-        raise TtxError(f"unsupported output format: {fmt}")
+    """Encode a PNG/JPG image to a shipping-style TTX (mipmaps + compress_file)."""
+    fmt = _canonical_format(fmt)
     try:
         from PIL import Image
     except ImportError:
@@ -479,8 +574,28 @@ def encode_png(
             "PNG encode needs the 'Pillow' package. Install it with:  pip install Pillow"
         )
     if status:
+        # status("PNG\u2192TTX pipeline mips+LZHAM")
         status(f"Reading {os.path.basename(in_path)} ...")
-    img = Image.open(in_path).convert("RGBA")
+    src = Image.open(in_path)
+    if fmt in AUTO_DXT_FORMATS:
+        fmt = (
+            "type_rgba_s3tc_dxt5"
+            if _png_has_useful_alpha(src)
+            else "type_rgb_s3tc_dxt1"
+        )
+        if status:
+            status(f"Auto DXT from PNG alpha \u2192 {fmt}")
+    if fmt not in ENCODABLE_FORMATS:
+        raise TtxError(f"unsupported output format: {fmt}")
+    if fmt == "type_rgb_etc2" and _png_has_useful_alpha(src):
+        fmt = "type_rgba_etc2"
+        if status:
+            status(f"Auto ETC2 from PNG alpha \u2192 {fmt}")
+    if fmt == "type_rgb_astc_6x6" and _png_has_useful_alpha(src):
+        fmt = "type_rgba_astc_6x6"
+        if status:
+            status(f"Auto ASTC from PNG alpha \u2192 {fmt}")
+    img = src.convert("RGBA")
     if flip:
         img = img.transpose(Image.FLIP_TOP_BOTTOM)
     w, h = img.size
@@ -489,24 +604,35 @@ def encode_png(
         if not (_is_po2(w) and _is_po2(h)):
             status(_po2_warning(w, h))
     if fmt == "type_rgba":
-        payload = img.tobytes()
+        payload, mips = _encode_raw_mipchain(img, mode="RGBA")
     elif fmt == "type_r":
-        payload = img.convert("L").tobytes()
+        payload, mips = _encode_raw_mipchain(img, mode="L")
     elif fmt == "type_rgb_s3tc_dxt1":
-        payload = _encode_bc1(img)
+        payload, mips = _encode_block_mipchain(img, _encode_bc1, last_max=1)
     elif fmt == "type_rgba_s3tc_dxt5":
-        payload = _encode_bc3(img)
+        payload, mips = _encode_block_mipchain(img, _encode_bc3, last_max=1)
+    elif fmt == "type_rgb_etc2":
+        payload, mips = _encode_block_mipchain(img, _encode_etc2, last_max=4)
+    elif fmt == "type_rgba_etc2":
+        payload, mips = _encode_block_mipchain(img, _encode_etc2_rgba, last_max=4)
+    elif fmt == "type_rgb_astc_6x6":
+        payload, mips = _encode_astc_mipchain(img, 6, 6, swizzle="RGB1")
+    elif fmt == "type_rgba_astc_6x6":
+        payload, mips = _encode_astc_mipchain(img, 6, 6, swizzle="RGBA")
     else:
         raise TtxError(f"unsupported output format: {fmt}")
-    data = _build_plain_container(fmt, w, h, payload)
+    if status:
+        status(f"Building TTX ({mips} mips, compress_file) ...")
+    plain = _build_plain_container(fmt, w, h, payload, mips=mips)
+    data = _compress_file_container(plain)
     if status:
         status("Writing TTX ...")
     with open(out_path, "wb") as f:
         f.write(data)
     if status:
         status("Done.")
-    return {"width": w, "height": h, "format": fmt, "mips": 1,
-            "compressed": False, "po2": _is_po2(w) and _is_po2(h)}
+    return {"width": w, "height": h, "format": fmt, "mips": mips,
+            "compressed": True, "po2": _is_po2(w) and _is_po2(h)}
 
 
 def _u64_bytes(v: int) -> bytes:
@@ -517,34 +643,248 @@ def _u32_bytes(v: int) -> bytes:
     return v.to_bytes(4, "little")
 
 
-def _prop_chunk(payload: bytes) -> bytes:
-    sz = 32 + len(payload)
-    return b"\x00" * 16 + _u64_bytes(sz) + _u64_bytes(sz) + payload
+def _align8(n: int) -> int:
+    return (n + 7) & ~7
 
 
-def _str_chunk(name: str) -> bytes:
-    b = name.encode("ascii")
-    return _prop_chunk(_u64_bytes(len(b)) + b)
-
-
-def _data_chunk(payload: bytes) -> bytes:
-    return _prop_chunk(payload)
-
-
-def _build_plain_container(fmt: str, w: int, h: int, payload: bytes) -> bytes:
-    props = (
-        _str_chunk(fmt)
-        + _str_chunk("target_2d")
-        + _prop_chunk(_u32_bytes(w))
-        + _prop_chunk(_u32_bytes(h))
-        + _prop_chunk(_u32_bytes(1))
-        + _prop_chunk(_u32_bytes(1))
-        + _data_chunk(payload)
+def _typed_chunk(type_id: bytes, name_id: bytes, payload: bytes, size=None, hs=None) -> bytes:
+    if size is None:
+        size = 32 + len(payload)
+    if hs is None:
+        hs = size
+    body = payload
+    extra = max(0, int(size) - 32 - len(body))
+    if extra:
+        body += b"\x00" * extra
+    pad = max(0, int(hs) - int(size))
+    return type_id + name_id + _u64_bytes(int(size)) + _u64_bytes(int(hs)) + body + (
+        b"\x00" * pad
     )
-    container = MAGIC_PLAIN + _u64_bytes(0) + _u64_bytes(0) + _u64_bytes(32)
-    container += props
-    container = container[:16] + _u64_bytes(len(container)) + container[24:]
-    return container
+
+
+def _str_chunk(name: str, name_id: bytes) -> bytes:
+    raw = name.encode("ascii")
+    payload = _u64_bytes(len(raw)) + raw
+    inner = _align8(len(payload))
+    return _typed_chunk(_TYPE_STRING8, name_id, payload, size=32 + inner, hs=32 + inner)
+
+
+def _u32_chunk(value: int, name_id: bytes) -> bytes:
+    return _typed_chunk(
+        _TYPE_INT32, name_id, _u32_bytes(value), size=36, hs=40
+    )
+
+
+def _u64_chunk(value: int, name_id: bytes) -> bytes:
+    return _typed_chunk(_TYPE_UINT64, name_id, _u64_bytes(value), size=40, hs=40)
+
+
+def _crc_chunk(value: int, name_id: bytes) -> bytes:
+    return _typed_chunk(
+        _TYPE_UINT32, name_id, _u32_bytes(value & 0xFFFFFFFF), size=36, hs=40
+    )
+
+
+def _data_chunk(payload: bytes, name_id: bytes) -> bytes:
+    size = 32 + len(payload)
+    return _typed_chunk(_TYPE_LIST_U8, name_id, payload, size=size, hs=_align8(size))
+
+
+def _wrap_container(magic: bytes, name_id: bytes, inner: bytes) -> bytes:
+    total = 32 + len(inner)
+    hdr = magic + name_id + _u64_bytes(total) + _u64_bytes(32)
+    return hdr + inner
+
+
+def _build_plain_container(fmt: str, w: int, h: int, payload: bytes, mips: int = 1) -> bytes:
+    props = (
+        _str_chunk(fmt, _NAME_TYPE)
+        + _str_chunk("target_2d", _NAME_TARGET)
+        + _u32_chunk(w, _NAME_WIDTH)
+        + _u32_chunk(h, _NAME_HEIGHT)
+        + _u32_chunk(1, _NAME_LAYERS)
+        + _u32_chunk(max(1, mips), _NAME_MIPS)
+        + _data_chunk(payload, _NAME_PIXELS)
+    )
+    nested = _wrap_container(MAGIC_PLAIN, _NAME_NESTED, props)
+    return _wrap_container(MAGIC_PLAIN, _NAME_OUTER, nested)
+
+
+def _tmcompress_header(uncomp: int, csize: int) -> bytes:
+    import struct
+
+    return struct.pack(
+        "<IIQQQQQIIQ",
+        64,
+        _TMCOMPRESS_MAGIC,
+        uncomp,
+        csize,
+        0,
+        0,
+        _TMCOMPRESS_CONST,
+        _LZHAM_DICT_LOG2,
+        _LZHAM_TABLE_RATE,
+        0,
+    )
+
+
+def _compress_file_container(plain: bytes) -> bytes:
+    """Wrap a two-level plain TTX as compress_file=true (LZHAM zlib-style)."""
+    import zlib
+
+    try:
+        import lzham
+    except ImportError:
+        raise TtxError(
+            "TTX compress_file encode needs the 'pylzham' package. "
+            "Install it with:  pip install pylzham"
+        )
+    inner = plain[32:]
+    raw = lzham.compress(
+        inner,
+        {
+            "dict_size_log2": _LZHAM_DICT_LOG2,
+            "table_update_rate": _LZHAM_TABLE_RATE,
+        },
+    )
+    stream = _LZHAM_ZLIB_HDR + raw
+    blob = _tmcompress_header(len(inner), 64 + len(stream)) + stream
+    props = (
+        _u64_chunk(len(inner), _NAME_SIZE_UNCOMP)
+        + _u64_chunk(len(blob), _NAME_SIZE_COMP)
+        + _crc_chunk(zlib.crc32(inner) & 0xFFFFFFFF, _NAME_CRC_UNCOMP)
+        + _crc_chunk(zlib.crc32(blob) & 0xFFFFFFFF, _NAME_CRC_COMP)
+        + _data_chunk(blob, _NAME_COMP_BLOB)
+    )
+    nested = _wrap_container(MAGIC_COMPRESSED, _NAME_NESTED, props)
+    return _wrap_container(MAGIC_COMPRESSED, _NAME_OUTER, nested)
+
+
+def _mip_count(w: int, h: int) -> int:
+    n = 1
+    m = max(w, h)
+    while m > 1:
+        m //= 2
+        n += 1
+    return n
+
+
+def _iter_mip_images(img, last_max: int):
+    """Yield RGBA levels down to max(w,h) <= last_max (IPACS ETC2 stops at 4)."""
+    from PIL import Image
+
+    cur = img.convert("RGBA")
+    while True:
+        yield cur
+        cw, ch = cur.size
+        if max(cw, ch) <= last_max:
+            break
+        cur = cur.resize(
+            (max(1, cw // 2), max(1, ch // 2)),
+            Image.Resampling.BOX,
+        )
+
+
+def _encode_block_mipchain(img, encode_one, last_max: int):
+    parts = []
+    n = 0
+    for level in _iter_mip_images(img, last_max):
+        parts.append(encode_one(level))
+        n += 1
+    return b"".join(parts), n
+
+
+def _encode_raw_mipchain(img, mode: str = "RGBA"):
+    parts = []
+    n = 0
+    for level in _iter_mip_images(img, last_max=1):
+        im = level if mode == "RGBA" else level.convert("L")
+        parts.append(im.tobytes())
+        n += 1
+    return b"".join(parts), n
+
+
+def _encode_astc_mipchain(
+    img,
+    block_w: int = 6,
+    block_h: int = 6,
+    quality: float = 60.0,
+    swizzle: str = "RGB1",
+):
+    """Encode a full mip chain as ASTC (16 bytes per block). Matches IPACS ASTC TTX."""
+    try:
+        from astc_encoder import (
+            ASTCConfig,
+            ASTCContext,
+            ASTCImage,
+            ASTCProfile,
+            ASTCSwizzle,
+            ASTCType,
+        )
+        from PIL import Image
+    except ImportError:
+        raise TtxError(
+            "ASTC encode needs the 'astc-encoder-py' package. "
+            "Install it with:  pip install astc-encoder-py"
+        )
+    ctx = ASTCContext(ASTCConfig(ASTCProfile.LDR, block_w, block_h, quality=quality))
+    swz = ASTCSwizzle.from_str(swizzle)
+    w, h = img.size
+    n = _mip_count(w, h)
+    parts = []
+    cur = img.convert("RGBA")
+    for i in range(n):
+        cw, ch = cur.size
+        astc_img = ASTCImage(ASTCType.U8, cw, ch, data=cur.tobytes())
+        parts.append(ctx.compress(astc_img, swz))
+        if i + 1 < n:
+            cur = cur.resize(
+                (max(1, cw // 2), max(1, ch // 2)),
+                Image.Resampling.BOX,
+            )
+    return b"".join(parts), n
+
+
+def _encode_etc2(img) -> bytes:
+    """Encode a single mip as ETC2 RGB. Input is RGBA byte order (not BGRA)."""
+    try:
+        import etcpak
+        from PIL import Image as _Image
+    except ImportError:
+        raise TtxError(
+            "ETC2 encode needs the 'etcpak' package. "
+            "Install it with:  pip install etcpak"
+        )
+    rgba = img.convert("RGBA")
+    w, h = rgba.size
+    nw, nh = (w + 3) & ~3, (h + 3) & ~3
+    if nw != w or nh != h:
+        canvas = _Image.new("RGBA", (nw, nh))
+        canvas.paste(rgba, (0, 0))
+        rgba = canvas
+        w, h = nw, nh
+    return etcpak.compress_etc2_rgb(rgba.tobytes(), w, h)
+
+
+def _encode_etc2_rgba(img) -> bytes:
+    """Encode a single mip as ETC2 RGB + EAC alpha. Input is RGBA byte order."""
+    try:
+        import etcpak
+        from PIL import Image as _Image
+    except ImportError:
+        raise TtxError(
+            "ETC2 encode needs the 'etcpak' package. "
+            "Install it with:  pip install etcpak"
+        )
+    rgba = img.convert("RGBA")
+    w, h = rgba.size
+    nw, nh = (w + 3) & ~3, (h + 3) & ~3
+    if nw != w or nh != h:
+        canvas = _Image.new("RGBA", (nw, nh))
+        canvas.paste(rgba, (0, 0))
+        rgba = canvas
+        w, h = nw, nh
+    return etcpak.compress_etc2_rgba(rgba.tobytes(), w, h)
 
 
 # --- BC1 / BC3 block compression ------------------------------------------
@@ -744,8 +1084,10 @@ def _auto_cli(argv=None):
         p.add_argument("-t", "--to-ttx", action="store_true",
                        help="Encode PNG/JPG -> .ttx instead of decoding")
         p.add_argument("-f", "--format", default="type_rgba",
-                       choices=sorted(ENCODABLE_FORMATS),
-                       help="Output texture format when encoding")
+                       choices=sorted(set(ENCODABLE_FORMATS) | set(FORMAT_ALIASES) | AUTO_DXT_FORMATS),
+                       help="Output texture format when encoding "
+                            "(dxt_auto = DXT5 if PNG has useful alpha else DXT1; "
+                            "astc6x6 = type_rgb_astc_6x6)")
         p.add_argument("--flip", action="store_true",
                        help="Flip vertically (for liveries)")
         p.add_argument("--info", action="store_true", help="Print info only")
@@ -839,7 +1181,7 @@ def _auto_cli(argv=None):
                     out = args.output
                 else:
                     out = os.path.splitext(f)[0] + ".ttx"
-                encode_png(f, out, fmt=args.format, flip=args.flip,
+                encode_png(f, out, fmt=_canonical_format(args.format), flip=args.flip,
                            status=lambda msg, f=f: print(f"    {msg}"))
                 continue
             with open(f, "rb") as fh:
@@ -857,7 +1199,10 @@ def _auto_cli(argv=None):
                 out = args.output
             else:
                 out = os.path.splitext(f)[0] + ".png"
-            _save_png(out, res["rgba"], res["width"], res["height"])
+            _save_png(
+                out, res["rgba"], res["width"], res["height"],
+                mode=_png_mode_for_format(res["format"]),
+            )
             print(f"    -> {out}")
         except Exception as exc:
             print(f"    ERROR: {exc}")

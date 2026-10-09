@@ -83,6 +83,9 @@ python ttx_converter.py <file.toc>  [--info]          # compressed (.toc/.tsc/.w
 ## Credits
 
 - **Chrispriv — [github.com/chrispriv](https://github.com/chrispriv)** — TM container
-  decoding for the compressed → TXT conversion (`.toc` / `.tsc` / `.wad` / `.tmb` / `.tsl`)
+  decoding for the compressed → TXT conversion (`.toc` / `.tsc` / `.wad` / `.tmb` / `.tsl`);
+  FS4 PC texture pipeline (auto DXT1/5 from PNG alpha, mipmapped LZHAM `compress_file`
+  TTX matching shipping IPACS files); FSG Mobile ETC2 + ASTC 6x6 support; native
+  scenery TTC ⇄ PNG conversion (DXT1/ETC2, zlib or LZHAM)
 - AuroraBorealis' web converter (Abflug) — inspiration for the texture/sound conversion,
   which unfortunately went offline

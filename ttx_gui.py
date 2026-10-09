@@ -1,8 +1,22 @@
 from __future__ import annotations
 
+import importlib.util
 import os
 import sys
 from pathlib import Path
+
+# Load THIS folder's ttx_converter.py by absolute path (ignore cwd / cached imports).
+_ROOT = Path(__file__).resolve().parent
+_root_s = str(_ROOT)
+if sys.path[:1] != [_root_s]:
+    sys.path.insert(0, _root_s)
+_TTX_PATH = _ROOT / "ttx_converter.py"
+_spec = importlib.util.spec_from_file_location("ttx_converter", _TTX_PATH)
+if _spec is None or _spec.loader is None:
+    raise RuntimeError(f"Cannot load {_TTX_PATH}")
+ttx = importlib.util.module_from_spec(_spec)
+sys.modules["ttx_converter"] = ttx
+_spec.loader.exec_module(ttx)
 
 from PySide6.QtCore import Qt, QObject, QThread, QSignalBlocker, Signal, QUrl
 from PySide6.QtGui import (
@@ -33,8 +47,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-import ttx_converter as ttx
-
 _HAS_QT = True
 
 _APP_ICON_CANDIDATES = ("app_icon.ico", "app_icon.png")
@@ -57,25 +69,44 @@ MODE_MP3 = "mp3"
 MODE_FLAC = "flac"
 MODE_OGG = "ogg"
 MODE_TOC = "toc"
+MODE_TTC_DECODE = "ttc_decode"
+MODE_TTC_ENCODE = "ttc_encode"
 
 IMAGE_EXT = (".png", ".jpg", ".jpeg", ".bmp", ".tga")
-FMT_LABELS = list(ttx.ENCODABLE_FORMATS.values())
+
+# User-facing target formats (item data = encoder key).
+# "dxt_auto" picks DXT5 if the PNG has useful alpha, otherwise DXT1.
+TTX_FORMAT_CHOICES = (
+    ("type_rgb_etc2", "FSG Mobile \u2014 ETC2"),
+    ("dxt_auto", "FS4 PC \u2014 DXT1/5"),
+    ("type_rgb_astc_6x6", "FSG Mobile \u2014 ASTC 6x6 (new)"),
+)
+TTC_FORMAT_CHOICES = (
+    ("etc2", "FSG Mobile \u2014 ETC2"),
+    ("dxt1", "FS4 PC \u2014 DXT1"),
+    # R8 GeoConvert *_mask.ttc — not for normal users yet
+    # ("r8", "FS4 PC \u2014 DXT5 (mask)"),
+)
+
+FLIP_MODES = (MODE_DECODE, MODE_ENCODE)
 
 MODES = (
     (MODE_DECODE, "TTX \u2192 PNG"),
-    (MODE_ENCODE, "PNG \u2192 TTX"),
+    (MODE_ENCODE, "PNG \u2192 TTX (choose format)"),
     (MODE_TSB, "TSB \u2192 WAV"),
     (MODE_WAV_TSB, "WAV \u2192 TSB"),
     (MODE_MP3, "MP3 \u2192 WAV"),
     (MODE_FLAC, "FLAC \u2192 WAV"),
     (MODE_OGG, "OGG \u2192 WAV"),
+    (MODE_TTC_DECODE, "TTC \u2192 PNG"),
+    (MODE_TTC_ENCODE, "PNG \u2192 TTC (choose format)"),
     (MODE_TOC, "Compressed \u2192 TXT (generic)"),
 )
 
 CATEGORIES = (
     ("Textures", (MODE_DECODE, MODE_ENCODE)),
     ("Audio",    (MODE_TSB, MODE_WAV_TSB, MODE_MP3, MODE_FLAC, MODE_OGG)),
-    ("Scenery",  (MODE_TOC,)),
+    ("Scenery",  (MODE_TTC_DECODE, MODE_TTC_ENCODE, MODE_TOC)),
 )
 
 MODE_LABELS = dict(MODES)
@@ -88,6 +119,8 @@ MODE_EXT = {
     MODE_FLAC: ".wav",
     MODE_OGG: ".wav",
     MODE_TOC: ".txt",
+    MODE_TTC_DECODE: ".png",
+    MODE_TTC_ENCODE: ".ttc",
 }
 MODE_INPUT_EXTS = {
     MODE_DECODE: (".ttx",),
@@ -98,6 +131,8 @@ MODE_INPUT_EXTS = {
     MODE_FLAC: (".flac",),
     MODE_OGG: (".ogg",),
     MODE_TOC: (".toc", ".tsc", ".wad", ".tmb", ".tsl"),
+    MODE_TTC_DECODE: (".ttc",),
+    MODE_TTC_ENCODE: IMAGE_EXT,
 }
 MODE_HINT = {
     MODE_DECODE: "Drag & drop .ttx files here\nor use the Browse button below",
@@ -108,16 +143,20 @@ MODE_HINT = {
     MODE_FLAC: "Drag & drop .flac files here\nor use the Browse button below",
     MODE_OGG: "Drag & drop .ogg files here\nor use the Browse button below",
     MODE_TOC: "Drag & drop .toc .tsc .wad .tmb .tsl files here\nor use the Browse button below",
+    MODE_TTC_DECODE: "Drag & drop .ttc scenery tiles here\nor use the Browse button below",
+    MODE_TTC_ENCODE: "Drag & drop PNG/JPG images here\nor use the Browse button below",
 }
 MODE_VER = {
     MODE_DECODE: "Decodes DXT  ETC2  ASTC  R8  RGBA textures \u2192 PNG",
-    MODE_ENCODE: "Encodes RGBA  R8  DXT1  DXT5  \u2192  .ttx (uncompressed)",
+    MODE_ENCODE: "Mipmaps + compress_file (LZHAM), like IPACS. DXT1/5 follows PNG alpha.",
     MODE_TSB: "Decodes PCM sound (mono/stereo N-bit) \u2192 16-bit WAV",
     MODE_WAV_TSB: "Encodes uncompressed WAV \u2192 .tsb (mono16 stereo16 ...)",
     MODE_MP3: "Decodes MP3 \u2192 16-bit WAV (lossless PCM)",
     MODE_FLAC: "Decodes FLAC \u2192 16-bit WAV",
     MODE_OGG: "Decodes OGG Vorbis \u2192 16-bit WAV",
     MODE_TOC: "Decodes compressed TM containers (.toc/.tsc/.wad/.tmb/.tsl) \u2192 generic text",
+    MODE_TTC_DECODE: "Decodes scenery .ttc (DXT / ETC2, zlib or LZHAM) \u2192 PNG",
+    MODE_TTC_ENCODE: "Choose who the scenery TTC is for. Flip is always on. Not detected from this PC.",
 }
 MODE_NOUN = {
     MODE_DECODE: "files",
@@ -128,6 +167,8 @@ MODE_NOUN = {
     MODE_FLAC: "FLAC files",
     MODE_OGG: "OGG files",
     MODE_TOC: "files",
+    MODE_TTC_DECODE: "tiles",
+    MODE_TTC_ENCODE: "images",
 }
 MODE_FILETYPES = {
     MODE_DECODE: [("TTX textures", "*.ttx")],
@@ -138,6 +179,8 @@ MODE_FILETYPES = {
     MODE_FLAC: [("FLAC audio", "*.flac"), ("All audio", "*.flac *.wav *.ogg *.mp3")],
     MODE_OGG: [("OGG audio", "*.ogg")],
     MODE_TOC: [("Compressed containers", "*.toc *.tsc *.wad *.tmb *.tsl")],
+    MODE_TTC_DECODE: [("TTC scenery textures", "*.ttc")],
+    MODE_TTC_ENCODE: [("Images", "*.png *.jpg *.jpeg *.bmp *.tga")],
 }
 
 DROP_BG = "#242424"
@@ -257,10 +300,37 @@ class _ConvertWorker(QObject):
                     self.log.emit(f"     {msg}", "dim")
 
                 if self._mode == MODE_ENCODE:
+                    # if i == 1:
+                    #     self.log.emit(
+                    #         f"     encoder {ttx.__file__}  "
+                    #         f"rev={getattr(ttx, 'ENCODE_REVISION', '')}",
+                    #         "dim",
+                    #     )
                     res = ttx.encode_png(path, out, fmt=self._fmt,
                                          flip=self._flip, status=_st)
-                    info = (f"{self._fmt}  {res['width']}x{res['height']}  "
-                            f"mips=1  plain")
+                    info = (f"{res['format']}  {res['width']}x{res['height']}  "
+                            f"mips={res.get('mips', 1)}  "
+                            f"{'compressed' if res.get('compressed') else 'plain'}")
+                elif self._mode == MODE_TTC_DECODE:
+                    import ttc_converter as ttc
+
+                    res = ttc.ttc_to_png(path, out, flip=True, status=_st)
+                    info = (f"{res.get('format')}  {res['width']}x{res['height']}  "
+                            f"mips={res.get('mips')}  "
+                            f"{res.get('payload_method', '')}")
+                elif self._mode == MODE_TTC_ENCODE:
+                    import ttc_converter as ttc
+
+                    res = ttc.png_to_ttc(
+                        path, out,
+                        fmt=self._fmt,
+                        flip=True,
+                        mipmaps=True,
+                        status=_st,
+                    )
+                    info = (f"{res['format']}  {res['width']}x{res['height']}  "
+                            f"mips={res['mips']}  extra={res.get('extra')}  "
+                            f"{res.get('payload_method')}")
                 elif self._mode == MODE_WAV_TSB:
                     import tsb_decoder
 
@@ -399,7 +469,7 @@ class MainWindow(QMainWindow):
         mode_row.setSpacing(8)
         mode_row.addWidget(QLabel("Convert:", central))
         combo = QComboBox(central)
-        combo.setMinimumWidth(210)
+        combo.setMinimumWidth(360)
         model = QStandardItemModel(combo)
         cat_font = QFont(combo.font())
         cat_font.setBold(True)
@@ -438,10 +508,9 @@ class MainWindow(QMainWindow):
         browse.clicked.connect(self._browse)
         pulse_row.addWidget(browse)
 
-        self._fmt_lbl = QLabel("Output format:", central)
+        self._fmt_lbl = QLabel("For:", central)
         self._fmt_combo = QComboBox(central)
-        for key, label in ttx.ENCODABLE_FORMATS.items():
-            self._fmt_combo.addItem(label, key)
+        self._fmt_combo.setMinimumWidth(220)
         pulse_row.addWidget(self._fmt_lbl)
         pulse_row.addWidget(self._fmt_combo)
 
@@ -518,10 +587,24 @@ class MainWindow(QMainWindow):
         self._ver_lbl.setText(MODE_VER[mode])
         if self._drop:
             self._drop.set_hint(MODE_HINT[mode])
-        show_fmt = mode == MODE_ENCODE
+        show_fmt = mode in (MODE_ENCODE, MODE_TTC_ENCODE)
         self._fmt_lbl.setVisible(show_fmt)
         self._fmt_combo.setVisible(show_fmt)
-        self._flip_cb.setVisible(mode in (MODE_DECODE, MODE_ENCODE))
+        if show_fmt:
+            self._fill_format_combo(mode)
+        self._flip_cb.setVisible(mode in FLIP_MODES)
+        self._flip_cb.setText("Flip vertically (for liveries)")
+
+    def _fill_format_combo(self, mode: str):
+        choices = TTX_FORMAT_CHOICES if mode == MODE_ENCODE else TTC_FORMAT_CHOICES
+        prev = self._fmt_combo.currentData()
+        self._fmt_combo.blockSignals(True)
+        self._fmt_combo.clear()
+        for key, label in choices:
+            self._fmt_combo.addItem(label, key)
+        idx = self._fmt_combo.findData(prev)
+        self._fmt_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self._fmt_combo.blockSignals(False)
 
     # ------------------------------------------------------------------ Helpers
     def _append_log(self, text: str, tag: str = ""):
@@ -561,7 +644,22 @@ class MainWindow(QMainWindow):
     def _add_files(self, paths: list[str]):
         if self._busy:
             return
-        added = [p for p in paths if self._accepts(p)]
+        expanded: list[str] = []
+        for p in paths:
+            if os.path.isdir(p):
+                for dirpath, _dirs, names in os.walk(p):
+                    for name in names:
+                        fp = os.path.join(dirpath, name)
+                        if self._accepts(fp):
+                            expanded.append(fp)
+            elif self._accepts(p):
+                expanded.append(p)
+        seen = set(self._files)
+        added = []
+        for p in expanded:
+            if p not in seen:
+                seen.add(p)
+                added.append(p)
         if not added:
             label = MODE_FILETYPES[self._mode][0][0]
             self._append_log(f"No matching {label} found in the selection.", "error")

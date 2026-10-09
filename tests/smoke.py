@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from PIL import Image
 import ttx_converter as ttx
+import ttc_converter as ttc
 import toc_decoder
 import tsb_decoder
 
@@ -71,6 +72,43 @@ def main() -> int:
         ri = tsb_decoder.tsb_to_wav(tsb, back)
         assert ri["channels"] == 1
         assert int(ri["sample_rate"]) == 22050
+
+        # --- Handoff features: mipmapped + LZHAM compress_file TTX ---
+        # Opaque PNG -> auto DXT1, alpha PNG -> auto DXT5.
+        opaque = os.path.join(tmp, "opaque.png")
+        Image.new("RGB", (64, 32), (200, 50, 30)).save(opaque)
+        alpha = os.path.join(tmp, "alpha.png")
+        Image.new("RGBA", (64, 32), (10, 200, 120, 128)).save(alpha)
+        for src, want_fmt in ((opaque, "type_rgb_s3tc_dxt1"),
+                              (alpha, "type_rgba_s3tc_dxt5")):
+            p = os.path.join(tmp, "auto.ttx")
+            info = ttx.encode_png(src, p, fmt="dxt_auto")
+            assert info["format"] == want_fmt, info
+            assert info["compressed"] is True
+            raw = open(p, "rb").read()
+            assert raw[:8] == ttx.MAGIC_COMPRESSED
+            back_png = os.path.join(tmp, "auto_back.png")
+            res = ttx.ttx_to_png(p, back_png)
+            assert (res["width"], res["height"]) == (64, 32)
+            assert res["mips"] > 1  # full mip chain, not single-mip
+        # ETC2 + ASTC 6x6 round-trips (mobile formats).
+        for fmt in ("type_rgb_etc2", "type_rgba_etc2",
+                    "type_rgb_astc_6x6", "type_rgba_astc_6x6"):
+            src = alpha if "rgba" in fmt else opaque
+            p = os.path.join(tmp, "mob.ttx")
+            info = ttx.encode_png(src, p, fmt=fmt)
+            assert info["format"] == fmt, info
+            res = ttx.ttx_to_png(p, os.path.join(tmp, "mob_back.png"))
+            assert (res["width"], res["height"]) == (64, 32)
+
+        # --- Scenery TTC round-trips (DXT1 + ETC2) ---
+        for fmt in ("dxt1", "etc2"):
+            p = os.path.join(tmp, "tile.ttc")
+            info = ttc.png_to_ttc(opaque, p, fmt=fmt)
+            assert info["format"] == fmt, info
+            assert info["mips"] > 1
+            res = ttc.ttc_to_png(p, os.path.join(tmp, "tile_back.png"))
+            assert (res["width"], res["height"]) == (64, 32)
 
     print("SMOKE OK: ttx square+rect all formats, tsb<->wav round-trip, tm generic dump")
     return 0
