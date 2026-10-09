@@ -89,6 +89,7 @@ jobs:
             "${ICON[@]}" \
             --name "AeroflyFS-Converter" \
             --collect-all wasmtime \
+            --collect-data archspec \
             --add-binary "$WASMTIME_SPEC" \
             --add-data "tmcompress.wasm${{ matrix.sep }}." \
             --add-data "assets${{ matrix.sep }}assets" \
@@ -100,6 +101,7 @@ jobs:
           python -m PyInstaller --noconfirm --onefile \
             --name "AeroflyFS-Converter-CLI" \
             --collect-all wasmtime \
+            --collect-data archspec \
             --add-binary "$WASMTIME_SPEC" \
             --add-data "tmcompress.wasm${{ matrix.sep }}." \
             --add-data "assets${{ matrix.sep }}assets" \
@@ -111,6 +113,25 @@ jobs:
           if [[ "$RUNNER_OS" == "Windows" ]]; then BIN=dist/AeroflyFS-Converter-CLI.exe; else BIN=dist/AeroflyFS-Converter-CLI; fi
           "$BIN" --help >/dev/null && echo "CLI binary OK"
           "$BIN" --selftest-wasmtime && echo "wasmtime bundled OK"
+
+      - name: Frozen round-trip test (texture ETC2/ASTC + audio)
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then BIN=dist/AeroflyFS-Converter-CLI.exe; else BIN=dist/AeroflyFS-Converter-CLI; fi
+          python - <<'PY'
+          from PIL import Image
+          import wave, struct
+          Image.new("RGB", (32, 32), (200, 50, 30)).save("rt.png")
+          Image.new("RGBA", (32, 32), (10, 200, 120, 128)).save("rt_alpha.png")
+          with wave.open("rt.wav", "wb") as w:
+              w.setnchannels(1); w.setsampwidth(2); w.setframerate(22050)
+              w.writeframes(struct.pack("<11025h", *([0] * 11025)))
+          print("fixtures written")
+          PY
+          "$BIN" rt.png -t -f type_rgb_etc2 -o rt_etc2.ttx && echo "frozen ETC2 encode OK"
+          "$BIN" rt_alpha.png -t -f type_rgba_astc_6x6 -o rt_astc.ttx && echo "frozen ASTC encode OK"
+          "$BIN" rt_etc2.ttx -o rt_etc2.png && echo "frozen TTX decode OK"
+          "$BIN" rt.wav -o rt.tsb && "$BIN" rt.tsb -o rt_back.wav && echo "frozen audio round-trip OK"
 
       - name: Install Qt system deps (Linux headless GUI test)
         if: runner.os == 'Linux'

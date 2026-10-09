@@ -52,6 +52,7 @@ def main() -> int:
         sys.executable, "-m", "PyInstaller",
         "--noconfirm", "--onefile",
         "--collect-all", "wasmtime",
+        "--collect-data", "archspec",
         "--add-binary", wasm_bin,
         "--add-data", f"tmcompress.wasm{sep}.",
     ]
