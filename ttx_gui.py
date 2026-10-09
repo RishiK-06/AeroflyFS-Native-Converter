@@ -1,22 +1,14 @@
 from __future__ import annotations
 
-import importlib.util
 import os
 import sys
 from pathlib import Path
 
-# Load THIS folder's ttx_converter.py by absolute path (ignore cwd / cached imports).
-_ROOT = Path(__file__).resolve().parent
-_root_s = str(_ROOT)
-if sys.path[:1] != [_root_s]:
-    sys.path.insert(0, _root_s)
-_TTX_PATH = _ROOT / "ttx_converter.py"
-_spec = importlib.util.spec_from_file_location("ttx_converter", _TTX_PATH)
-if _spec is None or _spec.loader is None:
-    raise RuntimeError(f"Cannot load {_TTX_PATH}")
-ttx = importlib.util.module_from_spec(_spec)
-sys.modules["ttx_converter"] = ttx
-_spec.loader.exec_module(ttx)
+# NOTE: plain import on purpose. A previous revision loaded
+# ttx_converter.py from disk via importlib.spec_from_file_location, but frozen
+# (PyInstaller onefile) apps only extract .pyc -- the .py source path does not
+# exist in _MEIPASS and the GUI crashed on startup (FileNotFoundError).
+import ttx_converter as ttx
 
 from PySide6.QtCore import Qt, QObject, QThread, QSignalBlocker, Signal, QUrl
 from PySide6.QtGui import (
@@ -773,6 +765,17 @@ def main():
     if not _HAS_QT:
         print("PySide6 not found - install with:  pip install PySide6")
         return 1
+    if "--selftest-gui" in sys.argv:
+        # Frozen-build gate: construct the full window offscreen without
+        # entering the event loop. Catches startup import crashes
+        # (e.g. loading modules from .py source paths missing in _MEIPASS).
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        app = QApplication([])
+        win = MainWindow()
+        assert win.windowTitle() == "Aerofly FS Converter", win.windowTitle()
+        assert win._mode_combo is not None and win._fmt_combo is not None
+        print("GUI SELFTEST OK: main window constructed")
+        return 0
     app = QApplication(sys.argv)
     app.setApplicationName("Aerofly FS Converter")
     app.setWindowIcon(_app_icon())

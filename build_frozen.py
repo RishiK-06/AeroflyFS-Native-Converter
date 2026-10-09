@@ -60,6 +60,8 @@ def main() -> int:
         common += ["--add-data", f"assets{sep}assets"]
 
     gui = ROOT / "ttx_gui_devl.py"
+    if not gui.is_file():
+        gui = ROOT / "ttx_gui.py"
     if gui.is_file():
         gui_cmd = list(common) + ["--windowed", "--name", "AeroflyFS-Converter", str(gui)]
         ico = ROOT / "assets" / "app_icon.ico"

@@ -112,6 +112,12 @@ jobs:
           "$BIN" --help >/dev/null && echo "CLI binary OK"
           "$BIN" --selftest-wasmtime && echo "wasmtime bundled OK"
 
+      - name: Smoke-test the GUI binary (offscreen startup)
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then GUI=dist/AeroflyFS-Converter.exe; else GUI=dist/AeroflyFS-Converter; fi
+          "$GUI" --selftest-gui && echo "GUI binary starts OK"
+
       - name: Package zips
         shell: bash
         run: |
