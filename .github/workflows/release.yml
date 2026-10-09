@@ -112,6 +112,15 @@ jobs:
           "$BIN" --help >/dev/null && echo "CLI binary OK"
           "$BIN" --selftest-wasmtime && echo "wasmtime bundled OK"
 
+      - name: Install Qt system deps (Linux headless GUI test)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1 libegl1 libxkbcommon0 \
+            libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 \
+            libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 \
+            libxcb-xinerama0 libxcb-xfixes0
+
       - name: Smoke-test the GUI binary (offscreen startup)
         shell: bash
         run: |
