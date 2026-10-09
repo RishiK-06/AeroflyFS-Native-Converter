@@ -39,7 +39,7 @@ jobs:
           p.write_text(s.replace(old, "__builtin_trap();"))
           print("patched", p)
           PY
-          python -m pip wheel --no-deps --no-build-isolation /tmp/plz/pylzham-0.1.3 -w dist-wheels
+          python -m pip wheel --no-deps /tmp/plz/pylzham-0.1.3 -w dist-wheels
 
       - name: Build wheel (Windows/Linux)
         if: runner.os != 'macOS'
