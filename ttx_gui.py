@@ -109,10 +109,10 @@ MODE_LABELS[MODE_TME_ZIP] = ".tme → .zip"
 MODE_LABELS[MODE_ZIP_TME] = ".zip → .tme"
 MODE_LABELS[MODE_TME_ZIP] = ".tme → .zip"
 MODE_LABELS[MODE_ZIP_TME] = ".zip → .tme"
-MODE_LABELS[MODE_TME_ZIP] = "Repack (.zip -> .tme)"
-MODE_LABELS[MODE_ZIP_TME] = "Unpack (.tme -> .zip)"
-MODE_LABELS[MODE_TME_ZIP] = "Repack (.zip -> .tme)"
-MODE_LABELS[MODE_ZIP_TME] = "Unpack (.tme -> .zip)"
+MODE_LABELS[MODE_TME_ZIP] = "ZIP \u2192 TME"
+MODE_LABELS[MODE_ZIP_TME] = "TME \u2192 ZIP"
+MODE_LABELS[MODE_TME_ZIP] = "ZIP \u2192 TME"
+MODE_LABELS[MODE_ZIP_TME] = "TME \u2192 ZIP"
 MODE_EXT = {
     MODE_DECODE: ".png",
     MODE_ENCODE: ".ttx",
@@ -188,8 +188,8 @@ MODE_FILETYPES = {
     MODE_FLAC: [("FLAC audio", "*.flac"), ("All audio", "*.flac *.wav *.ogg *.mp3")],
     MODE_OGG: [("OGG audio", "*.ogg")],
     MODE_TOC: [("Compressed containers", "*.toc *.tsc *.wad *.tmb *.tsl")],
-    MODE_TME_ZIP: [("DLC wrapper (.tme)", "*.tme")],
-    MODE_ZIP_TME: [("ZIP archive", "*.zip")],
+    MODE_TME_ZIP: [("ZIP archive", "*.zip")],
+    MODE_ZIP_TME: [("DLC wrapper (.tme)", "*.tme")],
     MODE_TTC_DECODE: [("TTC scenery textures", "*.ttc")],
     MODE_TTC_ENCODE: [("Images", "*.png *.jpg *.jpeg *.bmp *.tga")],
 }
