@@ -104,6 +104,10 @@ CATEGORIES = (
 )
 
 MODE_LABELS = dict(MODES)
+MODE_LABELS[MODE_TME_ZIP] = ".tme → .zip"
+MODE_LABELS[MODE_ZIP_TME] = ".zip → .tme"
+MODE_LABELS[MODE_TME_ZIP] = "Repack (.zip -> .tme)"
+MODE_LABELS[MODE_ZIP_TME] = "Unpack (.tme -> .zip)"
 MODE_LABELS[MODE_TME_ZIP] = "Repack (.zip -> .tme)"
 MODE_LABELS[MODE_ZIP_TME] = "Unpack (.tme -> .zip)"
 MODE_EXT = {
