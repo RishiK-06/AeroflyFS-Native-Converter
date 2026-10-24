@@ -104,6 +104,8 @@ CATEGORIES = (
 )
 
 MODE_LABELS = dict(MODES)
+MODE_LABELS[MODE_TME_ZIP] = "Repack (.zip -> .tme)"
+MODE_LABELS[MODE_ZIP_TME] = "Unpack (.tme -> .zip)"
 MODE_EXT = {
     MODE_DECODE: ".png",
     MODE_ENCODE: ".ttx",
@@ -179,6 +181,8 @@ MODE_FILETYPES = {
     MODE_FLAC: [("FLAC audio", "*.flac"), ("All audio", "*.flac *.wav *.ogg *.mp3")],
     MODE_OGG: [("OGG audio", "*.ogg")],
     MODE_TOC: [("Compressed containers", "*.toc *.tsc *.wad *.tmb *.tsl")],
+    MODE_TME_ZIP: [("DLC wrapper (.tme)", "*.tme")],
+    MODE_ZIP_TME: [("ZIP archive", "*.zip")],
     MODE_TTC_DECODE: [("TTC scenery textures", "*.ttc")],
     MODE_TTC_ENCODE: [("Images", "*.png *.jpg *.jpeg *.bmp *.tga")],
 }
@@ -598,9 +602,11 @@ class MainWindow(QMainWindow):
         show_fmt = mode in (MODE_ENCODE, MODE_TTC_ENCODE)
         self._fmt_lbl.setVisible(show_fmt)
         self._fmt_combo.setVisible(show_fmt)
-        if show_fmt:
+        if self._mode == MODE_TME_ZIP or self._mode == MODE_ZIP_TME:
+            pass  # no format picker for ZIP <-> TME
+        elif show_fmt:
             self._fill_format_combo(mode)
-        self._flip_cb.setVisible(mode in FLIP_MODES)
+        self._flip_cb.setVisible(mode in FLIP_MODES and mode not in (MODE_TME_ZIP, MODE_ZIP_TME))
         self._flip_cb.setText("Flip vertically (for liveries)")
 
     def _fill_format_combo(self, mode: str):
