@@ -63,6 +63,8 @@ MODE_OGG = "ogg"
 MODE_TOC = "toc"
 MODE_TTC_DECODE = "ttc_decode"
 MODE_TTC_ENCODE = "ttc_encode"
+MODE_TME_ZIP = "tme_zip"
+MODE_ZIP_TME = "zip_tme"
 
 IMAGE_EXT = (".png", ".jpg", ".jpeg", ".bmp", ".tga")
 
@@ -98,7 +100,7 @@ MODES = (
 CATEGORIES = (
     ("Textures", (MODE_DECODE, MODE_ENCODE)),
     ("Audio",    (MODE_TSB, MODE_WAV_TSB, MODE_MP3, MODE_FLAC, MODE_OGG)),
-    ("Scenery",  (MODE_TTC_DECODE, MODE_TTC_ENCODE, MODE_TOC)),
+    ("Scenery",  (MODE_TTC_DECODE, MODE_TTC_ENCODE, MODE_TOC, MODE_TME_ZIP, MODE_ZIP_TME)),
 )
 
 MODE_LABELS = dict(MODES)
@@ -113,6 +115,8 @@ MODE_EXT = {
     MODE_TOC: ".txt",
     MODE_TTC_DECODE: ".png",
     MODE_TTC_ENCODE: ".ttc",
+    MODE_TME_ZIP: ".zip",
+    MODE_ZIP_TME: ".tme",
 }
 MODE_INPUT_EXTS = {
     MODE_DECODE: (".ttx",),
@@ -125,6 +129,8 @@ MODE_INPUT_EXTS = {
     MODE_TOC: (".toc", ".tsc", ".wad", ".tmb", ".tsl"),
     MODE_TTC_DECODE: (".ttc",),
     MODE_TTC_ENCODE: IMAGE_EXT,
+    MODE_TME_ZIP: (".zip",),
+    MODE_ZIP_TME: (".tme",),
 }
 MODE_HINT = {
     MODE_DECODE: "Drag & drop .ttx files here\nor use the Browse button below",
@@ -137,6 +143,8 @@ MODE_HINT = {
     MODE_TOC: "Drag & drop .toc .tsc .wad .tmb .tsl files here\nor use the Browse button below",
     MODE_TTC_DECODE: "Drag & drop .ttc scenery tiles here\nor use the Browse button below",
     MODE_TTC_ENCODE: "Drag & drop PNG/JPG images here\nor use the Browse button below",
+    MODE_TME_ZIP: "Repack (.zip → .tme)",
+    MODE_ZIP_TME: "Unpack (.tme → .zip)",
 }
 MODE_VER = {
     MODE_DECODE: "Decodes DXT  ETC2  ASTC  R8  RGBA textures \u2192 PNG",
@@ -346,6 +354,14 @@ class _ConvertWorker(QObject):
                     info = (f"{info_map['format']}  "
                             f"{info_map['sample_rate']:.0f} Hz  "
                             f"{info_map['channels']}ch  {info_map['bits']}-bit")
+                elif self._mode == MODE_ZIP_TME:
+                    import tme_converter as tme
+                    res = tme.zip_to_tme(path, out, status=_st)
+                    info = (f"Repacked to .tme: {res['mode']}")
+                elif self._mode == MODE_TME_ZIP:
+                    import tme_converter as tme
+                    res = tme.tme_to_zip(path, out, status=_st)
+                    info = (f"Unpacked to .zip: {res['mode']}")
                 elif self._mode == MODE_TOC:
                     import toc_decoder
 
