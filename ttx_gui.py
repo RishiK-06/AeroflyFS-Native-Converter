@@ -152,8 +152,8 @@ MODE_HINT = {
     MODE_TOC: "Drag & drop .toc .tsc .wad .tmb .tsl files here\nor use the Browse button below",
     MODE_TTC_DECODE: "Drag & drop .ttc scenery tiles here\nor use the Browse button below",
     MODE_TTC_ENCODE: "Drag & drop PNG/JPG images here\nor use the Browse button below",
-    MODE_TME_ZIP: "Repack (.zip → .tme)",
-    MODE_ZIP_TME: "Unpack (.tme → .zip)",
+    MODE_TME_ZIP: "ZIP → TME (DLC wrapper)",
+    MODE_ZIP_TME: ".tme → ZIP",
 }
 MODE_VER = {
     MODE_DECODE: "Decodes DXT  ETC2  ASTC  R8  RGBA textures \u2192 PNG",
