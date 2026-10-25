@@ -104,8 +104,6 @@ CATEGORIES = (
 )
 
 MODE_LABELS = dict(MODES)
-MODE_LABELS[MODE_TME_ZIP] = "ZIP → TME (DLC wrapper)"
-MODE_LABELS[MODE_ZIP_TME] = ".tme → ZIP"
 MODE_EXT = {
     MODE_DECODE: ".png",
     MODE_ENCODE: ".ttx",
