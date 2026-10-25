@@ -109,6 +109,8 @@ MODE_LABELS[MODE_TME_ZIP] = ".tme → .zip"
 MODE_LABELS[MODE_ZIP_TME] = ".zip → .tme"
 MODE_LABELS[MODE_TME_ZIP] = ".tme → .zip"
 MODE_LABELS[MODE_ZIP_TME] = ".zip → .tme"
+MODE_LABELS[MODE_TME_ZIP] = ".tme → .zip"
+MODE_LABELS[MODE_ZIP_TME] = ".zip → .tme"
 MODE_LABELS[MODE_TME_ZIP] = "ZIP \u2192 TME"
 MODE_LABELS[MODE_ZIP_TME] = "TME \u2192 ZIP"
 MODE_LABELS[MODE_TME_ZIP] = "ZIP \u2192 TME"
@@ -166,6 +168,8 @@ MODE_VER = {
     MODE_TOC: "Decodes compressed TM containers (.toc/.tsc/.wad/.tmb/.tsl) \u2192 generic text",
     MODE_TTC_DECODE: "Decodes scenery .ttc (DXT / ETC2, zlib or LZHAM) \u2192 PNG",
     MODE_TTC_ENCODE: "Choose who the scenery TTC is for. Flip is always on. Not detected from this PC.",
+    MODE_TME_ZIP: "ZIP → TME DLC wrapper (repack)",
+    MODE_ZIP_TME: ".tme → ZIP (unpack)",
 }
 MODE_NOUN = {
     MODE_DECODE: "files",
@@ -178,6 +182,8 @@ MODE_NOUN = {
     MODE_TOC: "files",
     MODE_TTC_DECODE: "tiles",
     MODE_TTC_ENCODE: "images",
+    MODE_TME_ZIP: "files",
+    MODE_ZIP_TME: "files",
 }
 MODE_FILETYPES = {
     MODE_DECODE: [("TTX textures", "*.ttx")],
