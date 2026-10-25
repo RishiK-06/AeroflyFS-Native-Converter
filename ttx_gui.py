@@ -1,1 +1,809 @@
-from __future__ import annotations\n\nimport os\nimport sys\nfrom pathlib import Path\n\n# NOTE: plain import on purpose. A previous revision loaded\n# ttx_converter.py from disk via importlib.spec_from_file_location, but frozen\n# (PyInstaller onefile) apps only extract .pyc -- the .py source path does not\n# exist in _MEIPASS and the GUI crashed on startup (FileNotFoundError).\nimport ttx_converter as ttx\n\nfrom PySide6.QtCore import Qt, QObject, QThread, QSignalBlocker, Signal, QUrl\nfrom PySide6.QtGui import (\n    QColor,\n    QDesktopServices,\n    QFont,\n    QFontDatabase,\n    QIcon,\n    QPalette,\n    QStandardItem,\n    QStandardItemModel,\n    QTextCharFormat,\n    QTextCursor,\n)\nfrom PySide6.QtWidgets import (\n    QApplication,\n    QCheckBox,\n    QComboBox,\n    QFileDialog,\n    QFrame,\n    QHBoxLayout,\n    QLabel,\n    QMainWindow,\n    QProgressBar,\n    QPushButton,\n    QTextEdit,\n    QVBoxLayout,\n    QWidget,\n)\n\n_HAS_QT = True\n\n_APP_ICON_CANDIDATES = ("app_icon.ico", "app_icon.png")\n\n\ndef _app_icon() -> QIcon:\n    """Load the app logo from ``assets/`` (falling back to where it is)."""\n    here = Path(__file__).resolve().parent / "assets"\n    for name in _APP_ICON_CANDIDATES:\n        path = here / name\n        if path.is_file():\n            return QIcon(str(path))\n    return QIcon()\n\nMODE_DECODE = "decode"\nMODE_ENCODE = "encode"\nMODE_TSB = "tsb"\nMODE_WAV_TSB = "wavtsb"\nMODE_MP3 = "mp3"\nMODE_FLAC = "flac"\nMODE_OGG = "ogg"\nMODE_TOC = "toc"\nMODE_TTC_DECODE = "ttc_decode"\nMODE_TTC_ENCODE = "ttc_encode"\nMODE_TME_ZIP = "tme_zip"\nMODE_ZIP_TME = "zip_tme"\n\nIMAGE_EXT = (".png", ".jpg", ".jpeg", ".bmp", ".tga")\n\n# User-facing target formats (item data = encoder key).\n# "dxt_auto" picks DXT5 if the PNG has useful alpha, otherwise DXT1.\nTTX_FORMAT_CHOICES = (\n    ("type_rgb_etc2", "FSG Mobile \u2014 ETC2"),\n    ("dxt_auto", "FS4 PC \u2014 DXT1/5"),\n    ("type_rgb_astc_6x6", "FSG Mobile \u2014 ASTC 6x6 (new)"),\n)\nTTC_FORMAT_CHOICES = (\n    ("etc2", "FSG Mobile \u2014 ETC2"),\n    ("dxt1", "FS4 PC \u2014 DXT1"),\n    # R8 GeoConvert *_mask.ttc — not for normal users yet\n    # ("r8", "FS4 PC \u2014 DXT5 (mask)"),\n)\n\nFLIP_MODES = (MODE_DECODE, MODE_ENCODE)\n\nMODES = (\n    (MODE_DECODE, "TTX \u2192 PNG"),\n    (MODE_ENCODE, "PNG \u2192 TTX (choose format)"),\n    (MODE_TSB, "TSB \u2192 WAV"),\n    (MODE_WAV_TSB, "WAV \u2192 TSB"),\n    (MODE_MP3, "MP3 \u2192 WAV"),\n    (MODE_FLAC, "FLAC \u2192 WAV"),\n    (MODE_OGG, "OGG \u2192 WAV"),\n    (MODE_TTC_DECODE, "TTC \u2192 PNG"),\n    (MODE_TTC_ENCODE, "PNG \u2192 TTC (choose format)"),\n    (MODE_TOC, "Compressed \u2192 TXT (generic)"),\n)\n\nCATEGORIES = (\n    ("Textures", (MODE_DECODE, MODE_ENCODE)),\n    ("Audio",    (MODE_TSB, MODE_WAV_TSB, MODE_MP3, MODE_FLAC, MODE_OGG)),\n    ("Scenery",  (MODE_TTC_DECODE, MODE_TTC_ENCODE, MODE_TOC)),\n    ("Repack / Unpack", (MODE_TME_ZIP, MODE_ZIP_TME)),\n)\n\nMODE_LABELS = dict(MODES)\nMODE_LABELS[MODE_TME_ZIP] = ".tme → .zip"\nMODE_LABELS[MODE_ZIP_TME] = ".zip → .tme"\nMODE_LABELS[MODE_TME_ZIP] = ".tme → .zip"\nMODE_LABELS[MODE_ZIP_TME] = ".zip → .tme"\nMODE_LABELS[MODE_TME_ZIP] = ".tme → .zip"\nMODE_LABELS[MODE_ZIP_TME] = ".zip → .tme"\nMODE_LABELS[MODE_TME_ZIP] = "ZIP \u2192 TME"\nMODE_LABELS[MODE_ZIP_TME] = "TME \u2192 ZIP"\nMODE_LABELS[MODE_TME_ZIP] = "ZIP \u2192 TME"\nMODE_LABELS[MODE_ZIP_TME] = "TME \u2192 ZIP"\nMODE_EXT = {\n    MODE_DECODE: ".png",\n    MODE_ENCODE: ".ttx",\n    MODE_TSB: ".wav",\n    MODE_WAV_TSB: ".tsb",\n    MODE_MP3: ".wav",\n    MODE_FLAC: ".wav",\n    MODE_OGG: ".wav",\n    MODE_TOC: ".txt",\n    MODE_TTC_DECODE: ".png",\n    MODE_TTC_ENCODE: ".ttc",\n    MODE_TME_ZIP: ".zip",\n    MODE_ZIP_TME: ".tme",\n}\nMODE_INPUT_EXTS = {\n    MODE_DECODE: (".ttx",),\n    MODE_ENCODE: IMAGE_EXT,\n    MODE_TSB: (".tsb",),\n    MODE_WAV_TSB: (".wav",),\n    MODE_MP3: (".mp3",),\n    MODE_FLAC: (".flac",),\n    MODE_OGG: (".ogg",),\n    MODE_TOC: (".toc", ".tsc", ".wad", ".tmb", ".tsl"),\n    MODE_TTC_DECODE: (".ttc",),\n    MODE_TTC_ENCODE: IMAGE_EXT,\n    MODE_TME_ZIP: (".zip",),\n    MODE_ZIP_TME: (".tme",),\n}\nMODE_HINT = {\n    MODE_DECODE: "Drag & drop .ttx files here\nor use the Browse button below",\n    MODE_ENCODE: "Drag & drop PNG/JPG images here\nor use the Browse button below",\n    MODE_TSB: "Drag & drop .tsb sound files here\nor use the Browse button below",\n    MODE_WAV_TSB: "Drag & drop .wav files here\nor use the Browse button below",\n    MODE_MP3: "Drag & drop .mp3 files here\nor use the Browse button below",\n    MODE_FLAC: "Drag & drop .flac files here\nor use the Browse button below",\n    MODE_OGG: "Drag & drop .ogg files here\nor use the Browse button below",\n    MODE_TOC: "Drag & drop .toc .tsc .wad .tmb .tsl files here\nor use the Browse button below",\n    MODE_TTC_DECODE: "Drag & drop .ttc scenery tiles here\nor use the Browse button below",\n    MODE_TTC_ENCODE: "Drag & drop PNG/JPG images here\nor use the Browse button below",\n    MODE_TME_ZIP: "ZIP → TME (DLC wrapper)",\n    MODE_ZIP_TME: ".tme → ZIP",\n}\nMODE_VER = {\n    MODE_DECODE: "Decodes DXT  ETC2  ASTC  R8  RGBA textures \u2192 PNG",\n    MODE_ENCODE: "Mipmaps + compress_file (LZHAM), like IPACS. DXT1/5 follows PNG alpha.",\n    MODE_TSB: "Decodes PCM sound (mono/stereo N-bit) \u2192 16-bit WAV",\n    MODE_WAV_TSB: "Encodes uncompressed WAV \u2192 .tsb (mono16 stereo16 ...)",\n    MODE_MP3: "Decodes MP3 \u2192 16-bit WAV (lossless PCM)",\n    MODE_FLAC: "Decodes FLAC \u2192 16-bit WAV",\n    MODE_OGG: "Decodes OGG Vorbis \u2192 16-bit WAV",\n    MODE_TOC: "Decodes compressed TM containers (.toc/.tsc/.wad/.tmb/.tsl) \u2192 generic text",\n    MODE_TTC_DECODE: "Decodes scenery .ttc (DXT / ETC2, zlib or LZHAM) \u2192 PNG",\n    MODE_TTC_ENCODE: "Choose who the scenery TTC is for. Flip is always on. Not detected from this PC.",\n    MODE_TME_ZIP: "ZIP → TME DLC wrapper (repack)",\n    MODE_ZIP_TME: ".tme → ZIP (unpack)",\n}\nMODE_NOUN = {\n    MODE_DECODE: "files",\n    MODE_ENCODE: "images",\n    MODE_TSB: "sounds",\n    MODE_WAV_TSB: "WAV files",\n    MODE_MP3: "MP3 files",\n    MODE_FLAC: "FLAC files",\n    MODE_OGG: "OGG files",\n    MODE_TOC: "files",\n    MODE_TTC_DECODE: "tiles",\n    MODE_TTC_ENCODE: "images",\n    MODE_TME_ZIP: "files",\n    MODE_ZIP_TME: "files",\n}\nMODE_FILETYPES = {\n    MODE_DECODE: [("TTX textures", "*.ttx")],\n    MODE_ENCODE: [("Images", "*.png *.jpg *.jpeg *.bmp *.tga")],\n    MODE_TSB: [("TSB sounds", "*.tsb")],\n    MODE_WAV_TSB: [("WAV audio", "*.wav")],\n    MODE_MP3: [("MP3 audio", "*.mp3")],\n    MODE_FLAC: [("FLAC audio", "*.flac"), ("All audio", "*.flac *.wav *.ogg *.mp3")],\n    MODE_OGG: [("OGG audio", "*.ogg")],\n    MODE_TOC: [("Compressed containers", "*.toc *.tsc *.wad *.tmb *.tsl")],\n    MODE_TME_ZIP: [("ZIP archive", "*.zip")],\n    MODE_ZIP_TME: [("DLC wrapper (.tme)", "*.tme")],\n    MODE_TTC_DECODE: [("TTC scenery textures", "*.ttc")],\n    MODE_TTC_ENCODE: [("Images", "*.png *.jpg *.jpeg *.bmp *.tga")],\n}\n\nDROP_BG = "#242424"\nDROP_BG_HOVER = "#25313f"\nLOG_BG = "#12151a"\nACCENT = "#0078d4"\nACCENT_HOVER = "#1a8ee8"\nBG = "#1e1e1e"\nFG = "#e0e0e0"\n\nAPP_QSS = """\nQWidget { font-size: 10pt; }\nQMainWindow, QWidget#central { background-color: #1e1e1e; }\n\nQLabel { background: transparent; color: #e0e0e0; }\nQLabel#header { font-size: 15pt; font-weight: 700; color: #ffffff; }\nQLabel#muted  { font-size: 9pt; color: #7d7d7d; }\nQLabel#counter { font-size: 9pt; color: #c0c0c0; }\n\nQFrame#dropzone {\n    background-color: #242424;\n    border: 2px dashed #474747;\n    border-radius: 8px;\n}\nQFrame#dropzone[hover="true"] {\n    background-color: #25313f;\n    border: 2px dashed #2f8ad8;\n}\nQLabel#hint { background: transparent; color: #9a9a9a; font-size: 11pt; }\n\nQPushButton {\n    background-color: #3c3c3c;\n    color: #e0e0e0;\n    border: none;\n    border-radius: 6px;\n    padding: 7px 18px;\n}\nQPushButton:hover { background-color: #4c4c4c; }\nQPushButton:pressed { background-color: #313131; }\nQPushButton:disabled { color: #6f6f6f; background-color: #2a2a2a; }\nQPushButton#accent { background-color: #0078d4; color: #ffffff; font-weight: 600; }\nQPushButton#accent:hover { background-color: #1a8ee8; }\nQPushButton#accent:disabled { background-color: #2a4a66; color: #93a9bb; }\n\nQTextEdit#log {\n    background-color: #12151a;\n    color: #b4c0cc;\n    border: 1px solid #303030;\n    border-radius: 6px;\n    padding: 8px;\n    selection-background-color: #005a9e;\n}\n\nQToolTip {\n    background-color: #2d2d2d;\n    color: #e0e0e0;\n    border: 1px solid #444444;\n    padding: 4px;\n}\nQMenu { background-color: #2b2b2b; color: #e0e0e0; }\nQMenu::item:selected { background-color: #0078d4; color: #ffffff; }\n"""\n\n\ndef _dark_palette() -> QPalette:\n    pal = QPalette()\n    pal.setColor(QPalette.Window, QColor(30, 30, 30))\n    pal.setColor(QPalette.WindowText, QColor(224, 224, 224))\n    pal.setColor(QPalette.Base, QColor(20, 20, 20))\n    pal.setColor(QPalette.AlternateBase, QColor(45, 45, 45))\n    pal.setColor(QPalette.Text, QColor(224, 224, 224))\n    pal.setColor(QPalette.PlaceholderText, QColor(136, 136, 136))\n    pal.setColor(QPalette.Button, QColor(60, 60, 60))\n    pal.setColor(QPalette.ButtonText, QColor(224, 224, 224))\n    pal.setColor(QPalette.BrightText, QColor(255, 120, 120))\n    pal.setColor(QPalette.Link, QColor(70, 150, 235))\n    pal.setColor(QPalette.ToolTipBase, QColor(45, 45, 45))\n    pal.setColor(QPalette.ToolTipText, QColor(224, 224, 224))\n    pal.setColor(QPalette.Highlight, QColor(0, 120, 212))\n    pal.setColor(QPalette.HighlightedText, QColor(255, 255, 255))\n    for role in (QPalette.WindowText, QPalette.Text, QPalette.ButtonText,\n                 QPalette.Highlight):\n        pal.setColor(QPalette.Disabled, role, QColor(110, 110, 110))\n    pal.setColor(QPalette.Disabled, QPalette.Highlight, QColor(80, 80, 80))\n    return pal\n\n\nclass _ConvertWorker(QObject):\n    """Runs conversions in a worker thread; talks to the GUI via signals."""\n\n    log = Signal(str, str)\n    progress = Signal(int, int)\n    done = Signal(int, int)\n\n    def __init__(self, files: list[str], mode: str, fmt: str, flip: bool):\n        super().__init__()\n        self._files = files\n        self._mode = mode\n        self._fmt = fmt\n        self._flip = flip\n\n    def run(self):\n        ok = 0\n        fail = 0\n        total = len(self._files)\n        for i, path in enumerate(self._files, 1):\n            self.progress.emit(i, total)\n            name = os.path.basename(path)\n            out = (path if self._mode == MODE_TOC\n                   else os.path.splitext(path)[0]) + MODE_EXT[self._mode]\n            self.log.emit(\n                f"[{i}/{total}] {name} \u2192 {os.path.basename(out)}", ""\n            )\n            try:\n\n                def _st(msg):\n                    self.log.emit(f"     {msg}", "dim")\n\n                if self._mode == MODE_ENCODE:\n                    # if i == 1:\n                    #     self.log.emit(\n                    #         f"     encoder {ttx.__file__}  "\n                    #         f"rev={getattr(ttx, 'ENCODE_REVISION', '')}",\n                    #         "dim",\n                    #     )\n                    res = ttx.encode_png(path, out, fmt=self._fmt,\n                                         flip=self._flip, status=_st)\n                    info = (f"{res['format']}  {res['width']}x{res['height']}  "\n                            f"mips={res.get('mips', 1)}  "\n                            f"{'compressed' if res.get('compressed') else 'plain'}")\n                elif self._mode == MODE_TTC_DECODE:\n                    import ttc_converter as ttc\n\n                    res = ttc.ttc_to_png(path, out, flip=True, status=_st)\n                    info = (f"{res.get('format')}  {res['width']}x{res['height']}  "\n                            f"mips={res.get('mips')}  "\n                            f"{res.get('payload_method', '')}")\n                elif self._mode == MODE_TTC_ENCODE:\n                    import ttc_converter as ttc\n\n                    res = ttc.png_to_ttc(\n                        path, out,\n                        fmt=self._fmt,\n                        flip=True,\n                        mipmaps=True,\n                        status=_st,\n                    )\n                    info = (f"{res['format']}  {res['width']}x{res['height']}  "\n                            f"mips={res['mips']}  extra={res.get('extra')}  "\n                            f"{res.get('payload_method')}")\n                elif self._mode == MODE_WAV_TSB:\n                    import tsb_decoder\n\n                    info_map = tsb_decoder.wav_to_tsb(path, out, status=_st)\n                    info = (f"{info_map['format']}  "\n                            f"{info_map['sample_rate']:.0f} Hz  "\n                            f"{info_map['channels']}ch  {info_map['bits']}-bit  "\n                            f"{info_map['frames']} frames")\n                elif self._mode in (MODE_MP3, MODE_FLAC, MODE_OGG):\n                    import audio_utils\n\n                    info_map = audio_utils.audio_to_wav(path, out, status=_st)\n                    info = (f"{info_map['source']}  "\n                            f"{info_map['sample_rate']:.0f} Hz  "\n                            f"{info_map['channels']}ch  16-bit WAV  "\n                            f"{info_map['frames']} frames")\n                elif self._mode == MODE_TSB:\n                    import tsb_decoder\n\n                    info_map = tsb_decoder.tsb_to_wav(path, out, status=_st)\n                    info = (f"{info_map['format']}  "\n                            f"{info_map['sample_rate']:.0f} Hz  "\n                            f"{info_map['channels']}ch  {info_map['bits']}-bit")\n                elif self._mode == MODE_ZIP_TME:\n                    import tme_converter as tme\n                    res = tme.tme_to_zip(path, out, status=_st)\n                    info = (f"Unpacked to .zip: {res['mode']}")\n                elif self._mode == MODE_TME_ZIP:\n                    import tme_converter as tme\n                    res = tme.zip_to_tme(path, out, status=_st)\n                    info = (f"Repacked to .tme: {res['mode']}")\n                elif self._mode == MODE_TOC:\n                    import toc_decoder\n\n                    doc = toc_decoder.toc_to_txt(path, out, status=_st)\n                    info = (f"{doc['variant']}  "\n                            f"placements={doc['placement_count']}")\n                else:\n                    res = ttx.ttx_to_png(path, out, flip=self._flip, status=_st)\n                    info = (f"{res['format']}  {res['width']}x{res['height']}  "\n                            f"mips={res['mips']}  "\n                            f"{'compressed' if res['compressed'] else 'plain'}")\n                self.log.emit(f"     {info}", "")\n                self.log.emit(\n                    f"     OK \u2192 {os.path.basename(out)}", "ok"\n                )\n                ok += 1\n            except Exception as exc:\n                self.log.emit(f"     ERROR: {exc}", "error")\n                fail += 1\n        self.done.emit(ok, fail)\n\n\nclass DropZone(QFrame):\n    """Large drop target that highlights on hover."""\n\n    dropped = Signal(list)\n\n    def __init__(self, parent=None):\n        super().__init__(parent)\n        self.setObjectName("dropzone")\n        self.setAcceptDrops(True)\n        self.setMinimumHeight(110)\n        lay = QVBoxLayout(self)\n        lay.setContentsMargins(12, 12, 12, 12)\n        self._hint = QLabel(MODE_HINT[MODE_DECODE], self)\n        self._hint.setObjectName("hint")\n        self._hint.setAlignment(Qt.AlignCenter)\n        lay.addWidget(self._hint)\n\n    def set_hint(self, text: str):\n        self._hint.setText(text)\n\n    def _set_hover(self, on: bool):\n        self.setProperty("hover", on)\n        self.style().unpolish(self)\n        self.style().polish(self)\n        self._hint.setStyleSheet(\n            "color: #cfe8ff;" if on else ""\n        )\n\n    def dragEnterEvent(self, event):\n        if event.mimeData().hasUrls():\n            self._set_hover(True)\n            event.acceptProposedAction()\n\n    def dragLeaveEvent(self, event):\n        self._set_hover(False)\n        super().dragLeaveEvent(event)\n\n    def dropEvent(self, event):\n        self._set_hover(False)\n        paths = [\n            url.toLocalFile()\n            for url in event.mimeData().urls()\n            if url.isLocalFile()\n        ]\n        if paths:\n            event.acceptProposedAction()\n            self.dropped.emit(paths)\n\n\nclass MainWindow(QMainWindow):\n    def __init__(self):\n        super().__init__()\n        self.setWindowTitle("Aerofly FS Converter")\n        self.setWindowIcon(_app_icon())\n        self.resize(760, 600)\n        self.setMinimumSize(680, 500)\n\n        self._files: list[str] = []\n        self._busy = False\n        self._mode = MODE_DECODE\n        self._mode_combo: QComboBox | None = None\n        self._fmt_combo: QComboBox | None = None\n        self._flip_cb: QCheckBox | None = None\n        self._drop: DropZone | None = None\n        self._list_lbl: QLabel | None = None\n        self._progress: QProgressBar | None = None\n        self._convert_btn: QPushButton | None = None\n        self._clear_btn: QPushButton | None = None\n        self._open_btn: QPushButton | None = None\n        self._thread: QThread | None = None\n        self._worker: _ConvertWorker | None = None\n        self._last_out_dir: str | None = None\n        self._made = 0\n\n        self.setAcceptDrops(True)\n        self._build_ui()\n\n    # ------------------------------------------------------------------ UI\n    def _build_ui(self):\n        central = QWidget()\n        central.setObjectName("central")\n        root = QVBoxLayout(central)\n        root.setContentsMargins(18, 14, 18, 14)\n        root.setSpacing(10)\n\n        header = QLabel("Aerofly FS Converter", central)\n        header.setObjectName("header")\n        root.addWidget(header)\n\n        mode_row = QHBoxLayout()\n        mode_row.setSpacing(8)\n        mode_row.addWidget(QLabel("Convert:", central))\n        combo = QComboBox(central)\n        combo.setMinimumWidth(360)\n        model = QStandardItemModel(combo)\n        cat_font = QFont(combo.font())\n        cat_font.setBold(True)\n        for cat_name, mode_ids in CATEGORIES:\n            cat = QStandardItem(cat_name)\n            cat.setEnabled(False)\n            cat.setFlags(Qt.NoItemFlags)\n            cat.setSelectable(False)\n            cat.setForeground(QColor("#8a8a8a"))\n            cat.setFont(cat_font)\n            model.appendRow(cat)\n            for mid in mode_ids:\n                item = QStandardItem(MODE_LABELS[mid])\n                item.setData(mid, Qt.UserRole)\n                model.appendRow(item)\n        combo.setModel(model)\n        combo.currentIndexChanged.connect(self._on_mode_changed)\n        root.addLayout(mode_row)\n        self._mode_combo = combo\n        mode_row.addWidget(combo)\n        mode_row.addStretch(1)\n\n        self._ver_lbl = QLabel(MODE_VER[MODE_DECODE], central)\n        self._ver_lbl.setObjectName("muted")\n        root.addWidget(self._ver_lbl)\n\n        zone = DropZone(central)\n        zone.dropped.connect(self._add_files)\n        root.addWidget(zone)\n        self._drop = zone\n        self.setAcceptDrops(True)\n\n        pulse_row = QHBoxLayout()\n        pulse_row.setSpacing(10)\n        browse = QPushButton("Browse \u2026", central)\n        browse.clicked.connect(self._browse)\n        pulse_row.addWidget(browse)\n\n        self._fmt_lbl = QLabel("For:", central)\n        self._fmt_combo = QComboBox(central)\n        self._fmt_combo.setMinimumWidth(220)\n        pulse_row.addWidget(self._fmt_lbl)\n        pulse_row.addWidget(self._fmt_combo)\n\n        self._flip_cb = QCheckBox("Flip vertically (for liveries)", central)\n        pulse_row.addWidget(self._flip_cb)\n\n        pulse_row.addStretch(1)\n        self._list_lbl = QLabel("No files selected", central)\n        self._list_lbl.setObjectName("counter")\n        pulse_row.addWidget(self._list_lbl)\n        root.addLayout(pulse_row)\n\n        self._log = QTextEdit(central)\n        self._log.setObjectName("log")\n        self._log.setReadOnly(True)\n        self._log.setFont(QFontDatabase.systemFont(QFontDatabase.FixedFont))\n        root.addWidget(self._log, 1)\n\n        prog_row = QHBoxLayout()\n        prog_row.setSpacing(10)\n        self._progress = QProgressBar(central)\n        self._progress.setRange(0, 100)\n        self._progress.setValue(0)\n        self._progress.setTextVisible(False)\n        self._progress.setFixedHeight(8)\n        self._progress.setVisible(False)\n        prog_row.addWidget(self._progress, 1)\n        root.addLayout(prog_row)\n\n        btn_row = QHBoxLayout()\n        self._open_btn = QPushButton("Open output folder", central)\n        self._open_btn.clicked.connect(self._open_output)\n        self._open_btn.setVisible(False)\n        btn_row.addWidget(self._open_btn)\n        btn_row.addStretch(1)\n        self._clear_btn = QPushButton("Clear", central)\n        self._clear_btn.clicked.connect(self._clear_files)\n        self._clear_btn.setDisabled(True)\n        btn_row.addWidget(self._clear_btn)\n        self._convert_btn = QPushButton("Convert", central)\n        self._convert_btn.setObjectName("accent")\n        self._convert_btn.clicked.connect(self._start_convert)\n        self._convert_btn.setDisabled(True)\n        btn_row.addWidget(self._convert_btn)\n        root.addLayout(btn_row)\n\n        self.setCentralWidget(central)\n        self._set_mode(MODE_DECODE)\n\n    # ------------------------------------------------------------------ Modes\n    def _on_mode_changed(self, index: int):\n        mode = self._mode_combo.itemData(index)\n        if mode:\n            self._set_mode(mode)\n\n    def _set_mode(self, mode: str):\n        if self._busy:\n            if self._mode_combo:\n                self._mode_combo.blockSignals(True)\n                self._mode_combo.setCurrentIndex(\n                    self._mode_combo.findData(self._mode)\n                )\n                self._mode_combo.blockSignals(False)\n            return\n        if mode != self._mode:\n            self._clear_files()\n        self._mode = mode\n        if self._mode_combo:\n            self._mode_combo.blockSignals(True)\n            idx = self._mode_combo.findData(mode)\n            if idx >= 0:\n                self._mode_combo.setCurrentIndex(idx)\n            self._mode_combo.blockSignals(False)\n        self._ver_lbl.setText(MODE_VER[mode])\n        if self._drop:\n            self._drop.set_hint(MODE_HINT[mode])\n        show_fmt = mode in (MODE_ENCODE, MODE_TTC_ENCODE)\n        self._fmt_lbl.setVisible(show_fmt)\n        self._fmt_combo.setVisible(show_fmt)\n        if self._mode == MODE_TME_ZIP or self._mode == MODE_ZIP_TME:\n            pass  # no format picker for ZIP <-> TME\n        elif show_fmt:\n            self._fill_format_combo(mode)\n        self._flip_cb.setVisible(mode in FLIP_MODES and mode not in (MODE_TME_ZIP, MODE_ZIP_TME))\n        self._flip_cb.setText("Flip vertically (for liveries)")\n\n    def _fill_format_combo(self, mode: str):\n        choices = TTX_FORMAT_CHOICES if mode == MODE_ENCODE else TTC_FORMAT_CHOICES\n        prev = self._fmt_combo.currentData()\n        self._fmt_combo.blockSignals(True)\n        self._fmt_combo.clear()\n        for key, label in choices:\n            self._fmt_combo.addItem(label, key)\n        idx = self._fmt_combo.findData(prev)\n        self._fmt_combo.setCurrentIndex(idx if idx >= 0 else 0)\n        self._fmt_combo.blockSignals(False)\n\n    # ------------------------------------------------------------------ Helpers\n    def _append_log(self, text: str, tag: str = ""):\n        color = {"dim": "#8a8a8a", "error": "#ff6b6b", "ok": "#8bc34a"}.get(\n            tag, "#c4cfd9"\n        )\n        fmt = QTextCharFormat()\n        fmt.setForeground(QColor(color))\n        cur = self._log.textCursor()\n        cur.movePosition(QTextCursor.End)\n        cur.insertText(text + "\n", fmt)\n        self._log.setTextCursor(cur)\n        self._log.ensureCursorVisible()\n\n    def _set_counter(self, text: str, color: str = "#c0c0c0"):\n        self._list_lbl.setText(text)\n        self._list_lbl.setStyleSheet(f"color: {color};")\n\n    def _selected_format(self) -> str:\n        return self._fmt_combo.currentData()\n\n    # ------------------------------------------------------------------ File handling\n    def _browse(self):\n        paths, _ = QFileDialog.getOpenFileNames(\n            self,\n            "Open files",\n            "",\n            ";;".join(f"{label} ({globs})" for label, globs in MODE_FILETYPES[self._mode]),\n        )\n        if paths:\n            self._add_files(list(paths))\n\n    def _accepts(self, path: str) -> bool:\n        low = path.lower()\n        return low.endswith(MODE_INPUT_EXTS[self._mode])\n\n    def _add_files(self, paths: list[str]):\n        if self._busy:\n            return\n        expanded: list[str] = []\n        for p in paths:\n            if os.path.isdir(p):\n                for dirpath, _dirs, names in os.walk(p):\n                    for name in names:\n                        fp = os.path.join(dirpath, name)\n                        if self._accepts(fp):\n                            expanded.append(fp)\n            elif self._accepts(p):\n                expanded.append(p)\n        seen = set(self._files)\n        added = []\n        for p in expanded:\n            if p not in seen:\n                seen.add(p)\n                added.append(p)\n        if not added:\n            label = MODE_FILETYPES[self._mode][0][0]\n            self._append_log(f"No matching {label} found in the selection.", "error")\n            return\n        self._files.extend(added)\n        noun = MODE_NOUN[self._mode]\n        self._set_counter(f"{len(self._files)} {noun} selected")\n        self._convert_btn.setEnabled(True)\n        self._clear_btn.setEnabled(True)\n        for p in added:\n            self._append_log(f"  {os.path.basename(p)}")\n\n    def _clear_files(self):\n        if self._busy:\n            return\n        self._files.clear()\n        self._convert_btn.setDisabled(True)\n        self._clear_btn.setDisabled(True)\n        self._open_btn.setVisible(False)\n        self._made = 0\n        if self._progress:\n            self._progress.setVisible(False)\n            self._progress.setValue(0)\n        self._set_counter("No files selected")\n        self._log.clear()\n\n    # ------------------------------------------------------------------ Convert\n    def _start_convert(self):\n        if self._busy or not self._files:\n            return\n        self._busy = True\n        self._convert_btn.setDisabled(True)\n        self._clear_btn.setDisabled(True)\n        self._open_btn.setVisible(False)\n        self._set_counter("Converting \u2026", ACCENT)\n        if self._progress:\n            self._progress.setRange(0, len(self._files))\n            self._progress.setValue(0)\n            self._progress.setVisible(True)\n\n        self._thread = QThread(self)\n        self._worker = _ConvertWorker(\n            list(self._files), self._mode, self._selected_format(),\n            self._flip_cb.isChecked(),\n        )\n        self._worker.moveToThread(self._thread)\n        self._thread.started.connect(self._worker.run)\n        self._worker.log.connect(self._append_log)\n        self._worker.progress.connect(self._on_progress)\n        self._worker.done.connect(self._convert_done)\n        self._worker.done.connect(self._thread.quit)\n        self._thread.finished.connect(self._thread.deleteLater)\n        self._thread.finished.connect(self._worker.deleteLater)\n        self._thread.start()\n\n    def _on_progress(self, i: int, total: int):\n        if self._progress:\n            self._progress.setValue(i)\n        self._set_counter(f"Converting  {i}/{total}  \u2026", ACCENT)\n\n    def _convert_done(self, ok: int, fail: int):\n        self._busy = False\n        self._convert_btn.setEnabled(bool(self._files))\n        self._clear_btn.setEnabled(bool(self._files))\n        if self._progress:\n            self._progress.setValue(self._progress.maximum())\n        if fail:\n            self._set_counter(\n                f"Done \u2013 {ok} converted, {fail} failed", "#ff6b6b"\n            )\n        else:\n            self._set_counter(\n                f"Done \u2013 {ok} converted", "#8bc34a"\n            )\n        self._made = ok\n        if self._files:\n            self._last_out_dir = os.path.dirname(self._files[0])\n        if self._made and self._last_out_dir:\n            self._open_btn.setVisible(True)\n\n    def _open_output(self):\n        if self._last_out_dir:\n            QDesktopServices.openUrl(QUrl.fromLocalFile(self._last_out_dir))\n\n    # ------------------------------------------------------------------ Drag & drop on window background\n    def dragEnterEvent(self, event):\n        if event.mimeData().hasUrls():\n            event.acceptProposedAction()\n\n    def dragMoveEvent(self, event):\n        event.acceptProposedAction()\n\n    def dropEvent(self, event):\n        paths = [\n            url.toLocalFile()\n            for url in event.mimeData().urls()\n            if url.isLocalFile()\n        ]\n        if paths:\n            event.acceptProposedAction()\n            self._add_files(paths)\n\n    def closeEvent(self, event):\n        if self._busy and self._thread and self._thread.isRunning():\n            self._thread.quit()\n            self._thread.wait(3000)\n        super().closeEvent(event)\n\n\ndef main():\n    if not _HAS_QT:\n        print("PySide6 not found - install with:  pip install PySide6")\n        return 1\n    if "--selftest-gui" in sys.argv:\n        # Frozen-build gate: construct the full window offscreen without\n        # entering the event loop. Catches startup import crashes\n        # (e.g. loading modules from .py source paths missing in _MEIPASS).\n        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")\n        app = QApplication([])\n        win = MainWindow()\n        assert win.windowTitle() == "Aerofly FS Converter", win.windowTitle()\n        assert win._mode_combo is not None and win._fmt_combo is not None\n        print("GUI SELFTEST OK: main window constructed")\n        return 0\n    app = QApplication(sys.argv)\n    app.setApplicationName("Aerofly FS Converter")\n    app.setWindowIcon(_app_icon())\n    app.setStyle("Fusion")\n    app.setPalette(_dark_palette())\n    app.setStyleSheet(APP_QSS)\n    win = MainWindow()\n    win.show()\n    sys.exit(app.exec())\n\n\nif __name__ == "__main__":\n    raise SystemExit(main())
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+# NOTE: plain import on purpose. A previous revision loaded
+# ttx_converter.py from disk via importlib.spec_from_file_location, but frozen
+# (PyInstaller onefile) apps only extract .pyc -- the .py source path does not
+# exist in _MEIPASS and the GUI crashed on startup (FileNotFoundError).
+import ttx_converter as ttx
+
+from PySide6.QtCore import Qt, QObject, QThread, QSignalBlocker, Signal, QUrl
+from PySide6.QtGui import (
+    QColor,
+    QDesktopServices,
+    QFont,
+    QFontDatabase,
+    QIcon,
+    QPalette,
+    QStandardItem,
+    QStandardItemModel,
+    QTextCharFormat,
+    QTextCursor,
+)
+from PySide6.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QComboBox,
+    QFileDialog,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QProgressBar,
+    QPushButton,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
+
+_HAS_QT = True
+
+_APP_ICON_CANDIDATES = ("app_icon.ico", "app_icon.png")
+
+
+def _app_icon() -> QIcon:
+    """Load the app logo from ``assets/`` (falling back to where it is)."""
+    here = Path(__file__).resolve().parent / "assets"
+    for name in _APP_ICON_CANDIDATES:
+        path = here / name
+        if path.is_file():
+            return QIcon(str(path))
+    return QIcon()
+
+MODE_DECODE = "decode"
+MODE_ENCODE = "encode"
+MODE_TSB = "tsb"
+MODE_WAV_TSB = "wavtsb"
+MODE_MP3 = "mp3"
+MODE_FLAC = "flac"
+MODE_OGG = "ogg"
+MODE_TOC = "toc"
+MODE_TTC_DECODE = "ttc_decode"
+MODE_TTC_ENCODE = "ttc_encode"
+MODE_TME_ZIP = "tme_zip"
+MODE_ZIP_TME = "zip_tme"
+
+IMAGE_EXT = (".png", ".jpg", ".jpeg", ".bmp", ".tga")
+
+# User-facing target formats (item data = encoder key).
+# "dxt_auto" picks DXT5 if the PNG has useful alpha, otherwise DXT1.
+TTX_FORMAT_CHOICES = (
+    ("type_rgb_etc2", "FSG Mobile \u2014 ETC2"),
+    ("dxt_auto", "FS4 PC \u2014 DXT1/5"),
+    ("type_rgb_astc_6x6", "FSG Mobile \u2014 ASTC 6x6 (new)"),
+)
+TTC_FORMAT_CHOICES = (
+    ("etc2", "FSG Mobile \u2014 ETC2"),
+    ("dxt1", "FS4 PC \u2014 DXT1"),
+    # R8 GeoConvert *_mask.ttc — not for normal users yet
+    # ("r8", "FS4 PC \u2014 DXT5 (mask)"),
+)
+
+FLIP_MODES = (MODE_DECODE, MODE_ENCODE)
+
+MODES = (
+    (MODE_DECODE, "TTX \u2192 PNG"),
+    (MODE_ENCODE, "PNG \u2192 TTX (choose format)"),
+    (MODE_TSB, "TSB \u2192 WAV"),
+    (MODE_WAV_TSB, "WAV \u2192 TSB"),
+    (MODE_MP3, "MP3 \u2192 WAV"),
+    (MODE_FLAC, "FLAC \u2192 WAV"),
+    (MODE_OGG, "OGG \u2192 WAV"),
+    (MODE_TTC_DECODE, "TTC \u2192 PNG"),
+    (MODE_TTC_ENCODE, "PNG \u2192 TTC (choose format)"),
+    (MODE_TOC, "Compressed \u2192 TXT (generic)"),
+)
+
+CATEGORIES = (
+    ("Textures", (MODE_DECODE, MODE_ENCODE)),
+    ("Audio",    (MODE_TSB, MODE_WAV_TSB, MODE_MP3, MODE_FLAC, MODE_OGG)),
+    ("Scenery",  (MODE_TTC_DECODE, MODE_TTC_ENCODE, MODE_TOC, MODE_TME_ZIP, MODE_ZIP_TME)),
+)
+
+MODE_LABELS = dict(MODES)
+MODE_LABELS[MODE_TME_ZIP] = "ZIP → TME (DLC wrapper)"
+MODE_LABELS[MODE_ZIP_TME] = ".tme → ZIP"
+MODE_EXT = {
+    MODE_DECODE: ".png",
+    MODE_ENCODE: ".ttx",
+    MODE_TSB: ".wav",
+    MODE_WAV_TSB: ".tsb",
+    MODE_MP3: ".wav",
+    MODE_FLAC: ".wav",
+    MODE_OGG: ".wav",
+    MODE_TOC: ".txt",
+    MODE_TTC_DECODE: ".png",
+    MODE_TTC_ENCODE: ".ttc",
+    MODE_TME_ZIP: ".zip",
+    MODE_ZIP_TME: ".tme",
+}
+MODE_INPUT_EXTS = {
+    MODE_DECODE: (".ttx",),
+    MODE_ENCODE: IMAGE_EXT,
+    MODE_TSB: (".tsb",),
+    MODE_WAV_TSB: (".wav",),
+    MODE_MP3: (".mp3",),
+    MODE_FLAC: (".flac",),
+    MODE_OGG: (".ogg",),
+    MODE_TOC: (".toc", ".tsc", ".wad", ".tmb", ".tsl"),
+    MODE_TTC_DECODE: (".ttc",),
+    MODE_TTC_ENCODE: IMAGE_EXT,
+    MODE_TME_ZIP: (".zip",),
+    MODE_ZIP_TME: (".tme",),
+}
+MODE_HINT = {
+    MODE_DECODE: "Drag & drop .ttx files here\nor use the Browse button below",
+    MODE_ENCODE: "Drag & drop PNG/JPG images here\nor use the Browse button below",
+    MODE_TSB: "Drag & drop .tsb sound files here\nor use the Browse button below",
+    MODE_WAV_TSB: "Drag & drop .wav files here\nor use the Browse button below",
+    MODE_MP3: "Drag & drop .mp3 files here\nor use the Browse button below",
+    MODE_FLAC: "Drag & drop .flac files here\nor use the Browse button below",
+    MODE_OGG: "Drag & drop .ogg files here\nor use the Browse button below",
+    MODE_TOC: "Drag & drop .toc .tsc .wad .tmb .tsl files here\nor use the Browse button below",
+    MODE_TTC_DECODE: "Drag & drop .ttc scenery tiles here\nor use the Browse button below",
+    MODE_TTC_ENCODE: "Drag & drop PNG/JPG images here\nor use the Browse button below",
+    MODE_TME_ZIP: "Repack (.zip → .tme)",
+    MODE_ZIP_TME: "Unpack (.tme → .zip)",
+}
+MODE_VER = {
+    MODE_DECODE: "Decodes DXT  ETC2  ASTC  R8  RGBA textures \u2192 PNG",
+    MODE_ENCODE: "Mipmaps + compress_file (LZHAM), like IPACS. DXT1/5 follows PNG alpha.",
+    MODE_TSB: "Decodes PCM sound (mono/stereo N-bit) \u2192 16-bit WAV",
+    MODE_WAV_TSB: "Encodes uncompressed WAV \u2192 .tsb (mono16 stereo16 ...)",
+    MODE_MP3: "Decodes MP3 \u2192 16-bit WAV (lossless PCM)",
+    MODE_FLAC: "Decodes FLAC \u2192 16-bit WAV",
+    MODE_OGG: "Decodes OGG Vorbis \u2192 16-bit WAV",
+    MODE_TOC: "Decodes compressed TM containers (.toc/.tsc/.wad/.tmb/.tsl) \u2192 generic text",
+    MODE_TTC_DECODE: "Decodes scenery .ttc (DXT / ETC2, zlib or LZHAM) \u2192 PNG",
+    MODE_TTC_ENCODE: "Choose who the scenery TTC is for. Flip is always on. Not detected from this PC.",
+}
+MODE_NOUN = {
+    MODE_DECODE: "files",
+    MODE_ENCODE: "images",
+    MODE_TSB: "sounds",
+    MODE_WAV_TSB: "WAV files",
+    MODE_MP3: "MP3 files",
+    MODE_FLAC: "FLAC files",
+    MODE_OGG: "OGG files",
+    MODE_TOC: "files",
+    MODE_TTC_DECODE: "tiles",
+    MODE_TTC_ENCODE: "images",
+}
+MODE_FILETYPES = {
+    MODE_DECODE: [("TTX textures", "*.ttx")],
+    MODE_ENCODE: [("Images", "*.png *.jpg *.jpeg *.bmp *.tga")],
+    MODE_TSB: [("TSB sounds", "*.tsb")],
+    MODE_WAV_TSB: [("WAV audio", "*.wav")],
+    MODE_MP3: [("MP3 audio", "*.mp3")],
+    MODE_FLAC: [("FLAC audio", "*.flac"), ("All audio", "*.flac *.wav *.ogg *.mp3")],
+    MODE_OGG: [("OGG audio", "*.ogg")],
+    MODE_TOC: [("Compressed containers", "*.toc *.tsc *.wad *.tmb *.tsl")],
+    MODE_TTC_DECODE: [("TTC scenery textures", "*.ttc")],
+    MODE_TTC_ENCODE: [("Images", "*.png *.jpg *.jpeg *.bmp *.tga")],
+}
+
+DROP_BG = "#242424"
+DROP_BG_HOVER = "#25313f"
+LOG_BG = "#12151a"
+ACCENT = "#0078d4"
+ACCENT_HOVER = "#1a8ee8"
+BG = "#1e1e1e"
+FG = "#e0e0e0"
+
+APP_QSS = """
+QWidget { font-size: 10pt; }
+QMainWindow, QWidget#central { background-color: #1e1e1e; }
+
+QLabel { background: transparent; color: #e0e0e0; }
+QLabel#header { font-size: 15pt; font-weight: 700; color: #ffffff; }
+QLabel#muted  { font-size: 9pt; color: #7d7d7d; }
+QLabel#counter { font-size: 9pt; color: #c0c0c0; }
+
+QFrame#dropzone {
+    background-color: #242424;
+    border: 2px dashed #474747;
+    border-radius: 8px;
+}
+QFrame#dropzone[hover="true"] {
+    background-color: #25313f;
+    border: 2px dashed #2f8ad8;
+}
+QLabel#hint { background: transparent; color: #9a9a9a; font-size: 11pt; }
+
+QPushButton {
+    background-color: #3c3c3c;
+    color: #e0e0e0;
+    border: none;
+    border-radius: 6px;
+    padding: 7px 18px;
+}
+QPushButton:hover { background-color: #4c4c4c; }
+QPushButton:pressed { background-color: #313131; }
+QPushButton:disabled { color: #6f6f6f; background-color: #2a2a2a; }
+QPushButton#accent { background-color: #0078d4; color: #ffffff; font-weight: 600; }
+QPushButton#accent:hover { background-color: #1a8ee8; }
+QPushButton#accent:disabled { background-color: #2a4a66; color: #93a9bb; }
+
+QTextEdit#log {
+    background-color: #12151a;
+    color: #b4c0cc;
+    border: 1px solid #303030;
+    border-radius: 6px;
+    padding: 8px;
+    selection-background-color: #005a9e;
+}
+
+QToolTip {
+    background-color: #2d2d2d;
+    color: #e0e0e0;
+    border: 1px solid #444444;
+    padding: 4px;
+}
+QMenu { background-color: #2b2b2b; color: #e0e0e0; }
+QMenu::item:selected { background-color: #0078d4; color: #ffffff; }
+"""
+
+
+def _dark_palette() -> QPalette:
+    pal = QPalette()
+    pal.setColor(QPalette.Window, QColor(30, 30, 30))
+    pal.setColor(QPalette.WindowText, QColor(224, 224, 224))
+    pal.setColor(QPalette.Base, QColor(20, 20, 20))
+    pal.setColor(QPalette.AlternateBase, QColor(45, 45, 45))
+    pal.setColor(QPalette.Text, QColor(224, 224, 224))
+    pal.setColor(QPalette.PlaceholderText, QColor(136, 136, 136))
+    pal.setColor(QPalette.Button, QColor(60, 60, 60))
+    pal.setColor(QPalette.ButtonText, QColor(224, 224, 224))
+    pal.setColor(QPalette.BrightText, QColor(255, 120, 120))
+    pal.setColor(QPalette.Link, QColor(70, 150, 235))
+    pal.setColor(QPalette.ToolTipBase, QColor(45, 45, 45))
+    pal.setColor(QPalette.ToolTipText, QColor(224, 224, 224))
+    pal.setColor(QPalette.Highlight, QColor(0, 120, 212))
+    pal.setColor(QPalette.HighlightedText, QColor(255, 255, 255))
+    for role in (QPalette.WindowText, QPalette.Text, QPalette.ButtonText,
+                 QPalette.Highlight):
+        pal.setColor(QPalette.Disabled, role, QColor(110, 110, 110))
+    pal.setColor(QPalette.Disabled, QPalette.Highlight, QColor(80, 80, 80))
+    return pal
+
+
+class _ConvertWorker(QObject):
+    """Runs conversions in a worker thread; talks to the GUI via signals."""
+
+    log = Signal(str, str)
+    progress = Signal(int, int)
+    done = Signal(int, int)
+
+    def __init__(self, files: list[str], mode: str, fmt: str, flip: bool):
+        super().__init__()
+        self._files = files
+        self._mode = mode
+        self._fmt = fmt
+        self._flip = flip
+
+    def run(self):
+        ok = 0
+        fail = 0
+        total = len(self._files)
+        for i, path in enumerate(self._files, 1):
+            self.progress.emit(i, total)
+            name = os.path.basename(path)
+            out = (path if self._mode == MODE_TOC
+                   else os.path.splitext(path)[0]) + MODE_EXT[self._mode]
+            self.log.emit(
+                f"[{i}/{total}] {name} \u2192 {os.path.basename(out)}", ""
+            )
+            try:
+
+                def _st(msg):
+                    self.log.emit(f"     {msg}", "dim")
+
+                if self._mode == MODE_ENCODE:
+                    # if i == 1:
+                    #     self.log.emit(
+                    #         f"     encoder {ttx.__file__}  "
+                    #         f"rev={getattr(ttx, 'ENCODE_REVISION', '')}",
+                    #         "dim",
+                    #     )
+                    res = ttx.encode_png(path, out, fmt=self._fmt,
+                                         flip=self._flip, status=_st)
+                    info = (f"{res['format']}  {res['width']}x{res['height']}  "
+                            f"mips={res.get('mips', 1)}  "
+                            f"{'compressed' if res.get('compressed') else 'plain'}")
+                elif self._mode == MODE_TTC_DECODE:
+                    import ttc_converter as ttc
+
+                    res = ttc.ttc_to_png(path, out, flip=True, status=_st)
+                    info = (f"{res.get('format')}  {res['width']}x{res['height']}  "
+                            f"mips={res.get('mips')}  "
+                            f"{res.get('payload_method', '')}")
+                elif self._mode == MODE_TTC_ENCODE:
+                    import ttc_converter as ttc
+
+                    res = ttc.png_to_ttc(
+                        path, out,
+                        fmt=self._fmt,
+                        flip=True,
+                        mipmaps=True,
+                        status=_st,
+                    )
+                    info = (f"{res['format']}  {res['width']}x{res['height']}  "
+                            f"mips={res['mips']}  extra={res.get('extra')}  "
+                            f"{res.get('payload_method')}")
+                elif self._mode == MODE_WAV_TSB:
+                    import tsb_decoder
+
+                    info_map = tsb_decoder.wav_to_tsb(path, out, status=_st)
+                    info = (f"{info_map['format']}  "
+                            f"{info_map['sample_rate']:.0f} Hz  "
+                            f"{info_map['channels']}ch  {info_map['bits']}-bit  "
+                            f"{info_map['frames']} frames")
+                elif self._mode in (MODE_MP3, MODE_FLAC, MODE_OGG):
+                    import audio_utils
+
+                    info_map = audio_utils.audio_to_wav(path, out, status=_st)
+                    info = (f"{info_map['source']}  "
+                            f"{info_map['sample_rate']:.0f} Hz  "
+                            f"{info_map['channels']}ch  16-bit WAV  "
+                            f"{info_map['frames']} frames")
+                elif self._mode == MODE_TSB:
+                    import tsb_decoder
+
+                    info_map = tsb_decoder.tsb_to_wav(path, out, status=_st)
+                    info = (f"{info_map['format']}  "
+                            f"{info_map['sample_rate']:.0f} Hz  "
+                            f"{info_map['channels']}ch  {info_map['bits']}-bit")
+                elif self._mode == MODE_ZIP_TME:
+                    import tme_converter as tme
+                    res = tme.zip_to_tme(path, out, status=_st)
+                    info = (f"Repacked to .tme: {res['mode']}")
+                elif self._mode == MODE_TME_ZIP:
+                    import tme_converter as tme
+                    res = tme.tme_to_zip(path, out, status=_st)
+                    info = (f"Unpacked to .zip: {res['mode']}")
+                elif self._mode == MODE_TOC:
+                    import toc_decoder
+
+                    doc = toc_decoder.toc_to_txt(path, out, status=_st)
+                    info = (f"{doc['variant']}  "
+                            f"placements={doc['placement_count']}")
+                else:
+                    res = ttx.ttx_to_png(path, out, flip=self._flip, status=_st)
+                    info = (f"{res['format']}  {res['width']}x{res['height']}  "
+                            f"mips={res['mips']}  "
+                            f"{'compressed' if res['compressed'] else 'plain'}")
+                self.log.emit(f"     {info}", "")
+                self.log.emit(
+                    f"     OK \u2192 {os.path.basename(out)}", "ok"
+                )
+                ok += 1
+            except Exception as exc:
+                self.log.emit(f"     ERROR: {exc}", "error")
+                fail += 1
+        self.done.emit(ok, fail)
+
+
+class DropZone(QFrame):
+    """Large drop target that highlights on hover."""
+
+    dropped = Signal(list)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("dropzone")
+        self.setAcceptDrops(True)
+        self.setMinimumHeight(110)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(12, 12, 12, 12)
+        self._hint = QLabel(MODE_HINT[MODE_DECODE], self)
+        self._hint.setObjectName("hint")
+        self._hint.setAlignment(Qt.AlignCenter)
+        lay.addWidget(self._hint)
+
+    def set_hint(self, text: str):
+        self._hint.setText(text)
+
+    def _set_hover(self, on: bool):
+        self.setProperty("hover", on)
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self._hint.setStyleSheet(
+            "color: #cfe8ff;" if on else ""
+        )
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            self._set_hover(True)
+            event.acceptProposedAction()
+
+    def dragLeaveEvent(self, event):
+        self._set_hover(False)
+        super().dragLeaveEvent(event)
+
+    def dropEvent(self, event):
+        self._set_hover(False)
+        paths = [
+            url.toLocalFile()
+            for url in event.mimeData().urls()
+            if url.isLocalFile()
+        ]
+        if paths:
+            event.acceptProposedAction()
+            self.dropped.emit(paths)
+
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Aerofly FS Converter")
+        self.setWindowIcon(_app_icon())
+        self.resize(760, 600)
+        self.setMinimumSize(680, 500)
+
+        self._files: list[str] = []
+        self._busy = False
+        self._mode = MODE_DECODE
+        self._mode_combo: QComboBox | None = None
+        self._fmt_combo: QComboBox | None = None
+        self._flip_cb: QCheckBox | None = None
+        self._drop: DropZone | None = None
+        self._list_lbl: QLabel | None = None
+        self._progress: QProgressBar | None = None
+        self._convert_btn: QPushButton | None = None
+        self._clear_btn: QPushButton | None = None
+        self._open_btn: QPushButton | None = None
+        self._thread: QThread | None = None
+        self._worker: _ConvertWorker | None = None
+        self._last_out_dir: str | None = None
+        self._made = 0
+
+        self.setAcceptDrops(True)
+        self._build_ui()
+
+    # ------------------------------------------------------------------ UI
+    def _build_ui(self):
+        central = QWidget()
+        central.setObjectName("central")
+        root = QVBoxLayout(central)
+        root.setContentsMargins(18, 14, 18, 14)
+        root.setSpacing(10)
+
+        header = QLabel("Aerofly FS Converter", central)
+        header.setObjectName("header")
+        root.addWidget(header)
+
+        mode_row = QHBoxLayout()
+        mode_row.setSpacing(8)
+        mode_row.addWidget(QLabel("Convert:", central))
+        combo = QComboBox(central)
+        combo.setMinimumWidth(360)
+        model = QStandardItemModel(combo)
+        cat_font = QFont(combo.font())
+        cat_font.setBold(True)
+        for cat_name, mode_ids in CATEGORIES:
+            cat = QStandardItem(cat_name)
+            cat.setEnabled(False)
+            cat.setFlags(Qt.NoItemFlags)
+            cat.setSelectable(False)
+            cat.setForeground(QColor("#8a8a8a"))
+            cat.setFont(cat_font)
+            model.appendRow(cat)
+            for mid in mode_ids:
+                item = QStandardItem(MODE_LABELS[mid])
+                item.setData(mid, Qt.UserRole)
+                model.appendRow(item)
+        combo.setModel(model)
+        combo.currentIndexChanged.connect(self._on_mode_changed)
+        root.addLayout(mode_row)
+        self._mode_combo = combo
+        mode_row.addWidget(combo)
+        mode_row.addStretch(1)
+
+        self._ver_lbl = QLabel(MODE_VER[MODE_DECODE], central)
+        self._ver_lbl.setObjectName("muted")
+        root.addWidget(self._ver_lbl)
+
+        zone = DropZone(central)
+        zone.dropped.connect(self._add_files)
+        root.addWidget(zone)
+        self._drop = zone
+        self.setAcceptDrops(True)
+
+        pulse_row = QHBoxLayout()
+        pulse_row.setSpacing(10)
+        browse = QPushButton("Browse \u2026", central)
+        browse.clicked.connect(self._browse)
+        pulse_row.addWidget(browse)
+
+        self._fmt_lbl = QLabel("For:", central)
+        self._fmt_combo = QComboBox(central)
+        self._fmt_combo.setMinimumWidth(220)
+        pulse_row.addWidget(self._fmt_lbl)
+        pulse_row.addWidget(self._fmt_combo)
+
+        self._flip_cb = QCheckBox("Flip vertically (for liveries)", central)
+        pulse_row.addWidget(self._flip_cb)
+
+        pulse_row.addStretch(1)
+        self._list_lbl = QLabel("No files selected", central)
+        self._list_lbl.setObjectName("counter")
+        pulse_row.addWidget(self._list_lbl)
+        root.addLayout(pulse_row)
+
+        self._log = QTextEdit(central)
+        self._log.setObjectName("log")
+        self._log.setReadOnly(True)
+        self._log.setFont(QFontDatabase.systemFont(QFontDatabase.FixedFont))
+        root.addWidget(self._log, 1)
+
+        prog_row = QHBoxLayout()
+        prog_row.setSpacing(10)
+        self._progress = QProgressBar(central)
+        self._progress.setRange(0, 100)
+        self._progress.setValue(0)
+        self._progress.setTextVisible(False)
+        self._progress.setFixedHeight(8)
+        self._progress.setVisible(False)
+        prog_row.addWidget(self._progress, 1)
+        root.addLayout(prog_row)
+
+        btn_row = QHBoxLayout()
+        self._open_btn = QPushButton("Open output folder", central)
+        self._open_btn.clicked.connect(self._open_output)
+        self._open_btn.setVisible(False)
+        btn_row.addWidget(self._open_btn)
+        btn_row.addStretch(1)
+        self._clear_btn = QPushButton("Clear", central)
+        self._clear_btn.clicked.connect(self._clear_files)
+        self._clear_btn.setDisabled(True)
+        btn_row.addWidget(self._clear_btn)
+        self._convert_btn = QPushButton("Convert", central)
+        self._convert_btn.setObjectName("accent")
+        self._convert_btn.clicked.connect(self._start_convert)
+        self._convert_btn.setDisabled(True)
+        btn_row.addWidget(self._convert_btn)
+        root.addLayout(btn_row)
+
+        self.setCentralWidget(central)
+        self._set_mode(MODE_DECODE)
+
+    # ------------------------------------------------------------------ Modes
+    def _on_mode_changed(self, index: int):
+        mode = self._mode_combo.itemData(index)
+        if mode:
+            self._set_mode(mode)
+
+    def _set_mode(self, mode: str):
+        if self._busy:
+            if self._mode_combo:
+                self._mode_combo.blockSignals(True)
+                self._mode_combo.setCurrentIndex(
+                    self._mode_combo.findData(self._mode)
+                )
+                self._mode_combo.blockSignals(False)
+            return
+        if mode != self._mode:
+            self._clear_files()
+        self._mode = mode
+        if self._mode_combo:
+            self._mode_combo.blockSignals(True)
+            idx = self._mode_combo.findData(mode)
+            if idx >= 0:
+                self._mode_combo.setCurrentIndex(idx)
+            self._mode_combo.blockSignals(False)
+        self._ver_lbl.setText(MODE_VER[mode])
+        if self._drop:
+            self._drop.set_hint(MODE_HINT[mode])
+        show_fmt = mode in (MODE_ENCODE, MODE_TTC_ENCODE)
+        self._fmt_lbl.setVisible(show_fmt)
+        self._fmt_combo.setVisible(show_fmt)
+        if show_fmt:
+            self._fill_format_combo(mode)
+        self._flip_cb.setVisible(mode in FLIP_MODES)
+        self._flip_cb.setText("Flip vertically (for liveries)")
+
+    def _fill_format_combo(self, mode: str):
+        choices = TTX_FORMAT_CHOICES if mode == MODE_ENCODE else TTC_FORMAT_CHOICES
+        prev = self._fmt_combo.currentData()
+        self._fmt_combo.blockSignals(True)
+        self._fmt_combo.clear()
+        for key, label in choices:
+            self._fmt_combo.addItem(label, key)
+        idx = self._fmt_combo.findData(prev)
+        self._fmt_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self._fmt_combo.blockSignals(False)
+
+    # ------------------------------------------------------------------ Helpers
+    def _append_log(self, text: str, tag: str = ""):
+        color = {"dim": "#8a8a8a", "error": "#ff6b6b", "ok": "#8bc34a"}.get(
+            tag, "#c4cfd9"
+        )
+        fmt = QTextCharFormat()
+        fmt.setForeground(QColor(color))
+        cur = self._log.textCursor()
+        cur.movePosition(QTextCursor.End)
+        cur.insertText(text + "\n", fmt)
+        self._log.setTextCursor(cur)
+        self._log.ensureCursorVisible()
+
+    def _set_counter(self, text: str, color: str = "#c0c0c0"):
+        self._list_lbl.setText(text)
+        self._list_lbl.setStyleSheet(f"color: {color};")
+
+    def _selected_format(self) -> str:
+        return self._fmt_combo.currentData()
+
+    # ------------------------------------------------------------------ File handling
+    def _browse(self):
+        paths, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Open files",
+            "",
+            ";;".join(f"{label} ({globs})" for label, globs in MODE_FILETYPES[self._mode]),
+        )
+        if paths:
+            self._add_files(list(paths))
+
+    def _accepts(self, path: str) -> bool:
+        low = path.lower()
+        return low.endswith(MODE_INPUT_EXTS[self._mode])
+
+    def _add_files(self, paths: list[str]):
+        if self._busy:
+            return
+        expanded: list[str] = []
+        for p in paths:
+            if os.path.isdir(p):
+                for dirpath, _dirs, names in os.walk(p):
+                    for name in names:
+                        fp = os.path.join(dirpath, name)
+                        if self._accepts(fp):
+                            expanded.append(fp)
+            elif self._accepts(p):
+                expanded.append(p)
+        seen = set(self._files)
+        added = []
+        for p in expanded:
+            if p not in seen:
+                seen.add(p)
+                added.append(p)
+        if not added:
+            label = MODE_FILETYPES[self._mode][0][0]
+            self._append_log(f"No matching {label} found in the selection.", "error")
+            return
+        self._files.extend(added)
+        noun = MODE_NOUN[self._mode]
+        self._set_counter(f"{len(self._files)} {noun} selected")
+        self._convert_btn.setEnabled(True)
+        self._clear_btn.setEnabled(True)
+        for p in added:
+            self._append_log(f"  {os.path.basename(p)}")
+
+    def _clear_files(self):
+        if self._busy:
+            return
+        self._files.clear()
+        self._convert_btn.setDisabled(True)
+        self._clear_btn.setDisabled(True)
+        self._open_btn.setVisible(False)
+        self._made = 0
+        if self._progress:
+            self._progress.setVisible(False)
+            self._progress.setValue(0)
+        self._set_counter("No files selected")
+        self._log.clear()
+
+    # ------------------------------------------------------------------ Convert
+    def _start_convert(self):
+        if self._busy or not self._files:
+            return
+        self._busy = True
+        self._convert_btn.setDisabled(True)
+        self._clear_btn.setDisabled(True)
+        self._open_btn.setVisible(False)
+        self._set_counter("Converting \u2026", ACCENT)
+        if self._progress:
+            self._progress.setRange(0, len(self._files))
+            self._progress.setValue(0)
+            self._progress.setVisible(True)
+
+        self._thread = QThread(self)
+        self._worker = _ConvertWorker(
+            list(self._files), self._mode, self._selected_format(),
+            self._flip_cb.isChecked(),
+        )
+        self._worker.moveToThread(self._thread)
+        self._thread.started.connect(self._worker.run)
+        self._worker.log.connect(self._append_log)
+        self._worker.progress.connect(self._on_progress)
+        self._worker.done.connect(self._convert_done)
+        self._worker.done.connect(self._thread.quit)
+        self._thread.finished.connect(self._thread.deleteLater)
+        self._thread.finished.connect(self._worker.deleteLater)
+        self._thread.start()
+
+    def _on_progress(self, i: int, total: int):
+        if self._progress:
+            self._progress.setValue(i)
+        self._set_counter(f"Converting  {i}/{total}  \u2026", ACCENT)
+
+    def _convert_done(self, ok: int, fail: int):
+        self._busy = False
+        self._convert_btn.setEnabled(bool(self._files))
+        self._clear_btn.setEnabled(bool(self._files))
+        if self._progress:
+            self._progress.setValue(self._progress.maximum())
+        if fail:
+            self._set_counter(
+                f"Done \u2013 {ok} converted, {fail} failed", "#ff6b6b"
+            )
+        else:
+            self._set_counter(
+                f"Done \u2013 {ok} converted", "#8bc34a"
+            )
+        self._made = ok
+        if self._files:
+            self._last_out_dir = os.path.dirname(self._files[0])
+        if self._made and self._last_out_dir:
+            self._open_btn.setVisible(True)
+
+    def _open_output(self):
+        if self._last_out_dir:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(self._last_out_dir))
+
+    # ------------------------------------------------------------------ Drag & drop on window background
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dragMoveEvent(self, event):
+        event.acceptProposedAction()
+
+    def dropEvent(self, event):
+        paths = [
+            url.toLocalFile()
+            for url in event.mimeData().urls()
+            if url.isLocalFile()
+        ]
+        if paths:
+            event.acceptProposedAction()
+            self._add_files(paths)
+
+    def closeEvent(self, event):
+        if self._busy and self._thread and self._thread.isRunning():
+            self._thread.quit()
+            self._thread.wait(3000)
+        super().closeEvent(event)
+
+
+def main():
+    if not _HAS_QT:
+        print("PySide6 not found - install with:  pip install PySide6")
+        return 1
+    if "--selftest-gui" in sys.argv:
+        # Frozen-build gate: construct the full window offscreen without
+        # entering the event loop. Catches startup import crashes
+        # (e.g. loading modules from .py source paths missing in _MEIPASS).
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        app = QApplication([])
+        win = MainWindow()
+        assert win.windowTitle() == "Aerofly FS Converter", win.windowTitle()
+        assert win._mode_combo is not None and win._fmt_combo is not None
+        print("GUI SELFTEST OK: main window constructed")
+        return 0
+    app = QApplication(sys.argv)
+    app.setApplicationName("Aerofly FS Converter")
+    app.setWindowIcon(_app_icon())
+    app.setStyle("Fusion")
+    app.setPalette(_dark_palette())
+    app.setStyleSheet(APP_QSS)
+    win = MainWindow()
+    win.show()
+    sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
