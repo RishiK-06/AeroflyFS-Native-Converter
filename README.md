@@ -5,8 +5,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/RishiK-06/AeroflyFS-Native-Converter/actions/workflows/Release.yml"><img src="https://github.com/RishiK-06/AeroflyFS-Native-Converter/actions/workflows/Release.yml/badge.svg" alt="Release build" /></a>
-  <a href="https://github.com/RishiK-06/AeroflyFS-Native-Converter/actions/workflows/CI.yml"><img src="https://github.com/RishiK-06/AeroflyFS-Native-Converter/actions/workflows/CI.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/RishiK-06/AeroflyFS-Native-Converter/actions/workflows/release.yml"><img src="https://github.com/RishiK-06/AeroflyFS-Native-Converter/actions/workflows/release.yml/badge.svg" alt="Release build" /></a>
+  <a href="https://github.com/RishiK-06/AeroflyFS-Native-Converter/actions/workflows/ci.yml"><img src="https://github.com/RishiK-06/AeroflyFS-Native-Converter/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="https://github.com/RishiK-06/AeroflyFS-Native-Converter/actions/workflows/dependabot/update-graph/badge.svg"><img src="https://github.com/RishiK-06/AeroflyFS-Native-Converter/actions/workflows/dependabot/update-graph/badge.svg" alt="Dependency Graph" /></a>
   <a href="https://github.com/RishiK-06/AeroflyFS-Native-Converter/releases/latest"><img src="https://img.shields.io/github/v/release/RishiK-06/AeroflyFS-Native-Converter?label=latest%20release" alt="Latest release" /></a>
   <a href="#"><img src="https://img.shields.io/badge/builds-win_mac_linux-green?logo=windows&logoColor=white" alt="Platforms" /></a>
